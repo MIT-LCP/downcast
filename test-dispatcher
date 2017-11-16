@@ -1,0 +1,88 @@
+#!/usr/bin/python3
+
+from weakref import WeakSet
+from dispatcher import Dispatcher
+
+class TestMessage:
+    def __init__(self, seqnum, msgstr):
+        self.seqnum = seqnum
+        self.msgstr = msgstr
+
+    def __str__(self):
+        return ('[%d:%s]' % (self.seqnum, self.msgstr))
+
+# Note this is NOT meant as an example of how you should write a
+# handler, it's just to exercise the dispatcher logic
+class TestHandler:
+    def __init__(self):
+        self.seqnum = 0
+
+    def send_message(self, channel, msg, dispatcher, ttl):
+        print(" (%d)" % msg.seqnum)
+        if msg.seqnum < self.seqnum:
+            print("  ignored out-of-date %d" % msg.seqnum)
+        else:
+            if ttl == 0:
+                self.seqnum = msg.seqnum
+
+            dispatcher.nack_message(channel, msg, self)
+            if msg.seqnum == self.seqnum:
+                print("  >> RECEIVED %d: %s" % (msg.seqnum, msg.msgstr))
+                self.seqnum = msg.seqnum + 1
+                dispatcher.ack_message(channel, msg, self)
+
+    def flush(self):
+        return
+
+class TestDeadLetterHandler:
+    def send_message(self, channel, msg, dispatcher, ttl):
+        print("  Dead letter: %s" % msg)
+
+class TestGenerator:
+    def __init__(self):
+        self.dispatcher = Dispatcher()
+        self.dead_messages = WeakSet()
+
+    def gen_message(self, channel, seqnum, msgstr):
+        msg = TestMessage(seqnum, msgstr)
+        print("created %d" % seqnum)
+        self.dispatcher.send_message(channel, msg, self, 10)
+        msg = None
+        if len(self.dead_messages) != 0:
+            print("*** LEAKED: %d" % len(self.dead_messages))
+
+    def ack_message(self, channel, msg, recipient):
+        self.dead_messages.add(msg)
+        print("deleted %d" % msg.seqnum)
+
+    def nack_message(self, channel, msg, recipient):
+        print("deferred %d" % msg.seqnum)
+
+g = TestGenerator()
+h = TestHandler()
+d = TestDeadLetterHandler()
+g.dispatcher.add_handler(h)
+g.dispatcher.add_dead_letter_handler(d)
+
+g.gen_message('x', 0, "test zero")
+g.gen_message('x', 1, "test one")
+g.gen_message('x', 5, "test five")
+g.gen_message('x', 2, "test two")
+g.gen_message('x', 3, "test three")
+g.gen_message('x', 4, "test four")
+g.gen_message('x', -1000, "way out of order")
+g.gen_message('x', 6, "test six")
+g.gen_message('x', 7, "test seven")
+g.gen_message('x', 15, "test fifteen")
+g.gen_message('x', 14, "test fourteen")
+g.gen_message('x', 13, "test thirteen")
+g.gen_message('x', 12, "test twelve")
+g.gen_message('x', 11, "test eleven")
+g.gen_message('x', 10, "test ten")
+g.gen_message('x', 9, "test nine")
+g.gen_message('x', 8, "test eight")
+g.gen_message('x', 17, "test seventeen")
+print("--- flushing ---")
+g.dispatcher.flush()
+print("--- terminating ---")
+g.dispatcher.terminate()

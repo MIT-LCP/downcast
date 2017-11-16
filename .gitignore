@@ -1,0 +1,8 @@
+*~
+*#*
+*.orig
+*.rej
+*.patch
+
+*.pyc
+*.conf

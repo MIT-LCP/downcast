@@ -1,0 +1,88 @@
+#!/usr/bin/python3
+
+from configparser import ConfigParser
+from collections import OrderedDict
+import pymssql
+import sys
+
+from dispatcher import Dispatcher
+from parser import WaveSampleParser
+from messages import WaveSampleMessage
+
+class TestHandler:
+    def __init__(self):
+        self.prev_sequence_number = None
+        self.cur_sequence_number = None
+        self.cur_wave_ids = OrderedDict()
+
+    def send_message(self, chn, msg, source, ttl):
+        if isinstance(msg, WaveSampleMessage):
+            source.nack_message(chn, msg, self)
+
+            if msg.wave_id == 27 and msg.sequence_number == 507278718464:
+                raise Exception('we crash now')
+
+            if self.cur_sequence_number is None:
+                self.cur_sequence_number = msg.sequence_number
+
+            if msg.sequence_number == self.cur_sequence_number:
+                self.cur_wave_ids[msg.wave_id] = 1
+
+            if msg.sequence_number > self.cur_sequence_number or ttl == 0:
+                sys.stdout.write('\nT=%d: ' % self.cur_sequence_number)
+                self.prev_sequence_number = self.cur_sequence_number
+                self.cur_sequence_number = msg.sequence_number
+                self.cur_wave_ids.clear()
+
+            if msg.sequence_number == self.prev_sequence_number:
+                sys.stdout.write(' [%d]' % msg.wave_id)
+                source.ack_message(chn, msg, self)
+            elif msg.sequence_number < self.cur_sequence_number:
+                print('*** message out of sequence (%d > %d)'
+                      % (msg.sequence_number, self._sequence_number))
+
+    def flush(self):
+        return
+
+class TestDeadLetterHandler:
+    def send_message(self, chn, msg, source, ttl):
+        print('*** Dead letter (T=%d, W=%d)' % (msg.sequence_number, msg.wave_id))
+
+class TestGenerator:
+    def __init__(self):
+        cfg = ConfigParser()
+        cfg.read('server.conf')
+        s = cfg['demo']
+        self.db = pymssql.connect(s['hostname'], s['username'], s['password'], s['database'])
+        self.dispatcher = Dispatcher()
+
+    def parse(self, parser):
+        for (query, handler) in parser.queries():
+            cursor = self.db.cursor()
+            cursor.execute(*query)
+            row = cursor.fetchone()
+            while row is not None:
+                msg = handler('dummy', row)
+                if msg is not None:
+                    self.dispatcher.send_message(msg.mapping_id, msg, self, 100)
+                row = cursor.fetchone()
+            cursor.close()
+
+    def ack_message(self, chn, msg, recipient):
+        return
+    def nack_message(self, chn, msg, recipient):
+        return
+
+g = TestGenerator()
+h = TestHandler()
+d = TestDeadLetterHandler()
+g.dispatcher.add_handler(h)
+g.dispatcher.add_dead_letter_handler(d)
+
+parser = WaveSampleParser(limit = 500, mapping_id = '85965f09-e8c2-4e79-8c1c-cb1775bd2550')
+g.parse(parser)
+
+print('\n--- terminating ---')
+g.dispatcher.terminate()
+g.dispatcher.flush()
+print('')

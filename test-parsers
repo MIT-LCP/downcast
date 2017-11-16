@@ -1,0 +1,106 @@
+#!/usr/bin/python3
+
+from datetime import datetime
+
+from server import DWCDB
+from parser import (WaveSampleParser, AlertParser, NumericValueParser,
+                    EnumerationValueParser, WaveAttrParser,
+                    NumericAttrParser, EnumerationAttrParser,
+                    BedTagParser, PatientDateAttributeParser,
+                    PatientStringAttributeParser,
+                    PatientBasicInfoParser, PatientMappingParser)
+
+DWCDB.load_config('server.conf')
+db = DWCDB('demo')
+conn = db.connect()
+
+def test(parser):
+    for (query, handler) in parser.queries():
+        print()
+        print(query)
+        cursor = conn.cursor()
+        cursor.execute(*query)
+        row = cursor.fetchone()
+        nresults = 0
+        while row is not None:
+            msg = handler(db, row)
+            if msg is not None:
+                nresults += 1
+                print(msg)
+            row = cursor.fetchone()
+        cursor.close()
+        if nresults == 0:
+            raise Exception("no results!")
+
+def pt(s):
+    return datetime.strptime(s, '%Y-%m-%d %H:%M %z')
+
+## note the following queries are not necessarily efficient, but we
+## want to individually test each possible constraint
+
+test(WaveSampleParser(limit = 2))
+test(WaveSampleParser(limit = 1, mapping_id = '85965f09-e8c2-4e79-8c1c-cb1775bd2550'))
+test(WaveSampleParser(limit = 1, start_time = pt('2016-01-28 17:00 -0400')))
+test(WaveSampleParser(limit = 1, end_time = pt('2016-01-28 16:00 -0500')))
+test(WaveSampleParser(limit = 1, start_seqnum = 507279000000))
+test(WaveSampleParser(limit = 1, end_seqnum = 507279000000))
+
+test(AlertParser(limit = 2))
+test(AlertParser(limit = 1, mapping_id = '7cc594d9-d8dc-4bc7-9522-59cbc8091d23'))
+test(AlertParser(limit = 1, start_time = pt('2016-01-28 16:00 -0500')))
+test(AlertParser(limit = 1, end_time = pt('2016-01-28 16:00 -0500')))
+test(AlertParser(limit = 1, start_seqnum = 507279000000))
+test(AlertParser(limit = 1, end_seqnum = 507279000000))
+
+test(NumericValueParser(limit = 2))
+test(NumericValueParser(limit = 1, mapping_id = '655d8b35-cdb7-46aa-84d8-bed0dece0cb2'))
+test(NumericValueParser(limit = 1, start_time = pt('2016-01-28 16:00 -0500')))
+test(NumericValueParser(limit = 1, end_time = pt('2016-01-28 16:00 -0500')))
+test(NumericValueParser(limit = 1, start_seqnum = 507279000000))
+test(NumericValueParser(limit = 1, end_seqnum = 507279000000))
+
+test(EnumerationValueParser(limit = 2))
+test(EnumerationValueParser(limit = 1, mapping_id = '466fcc4c-7d8c-4c59-b00c-80aba6e7605d'))
+test(EnumerationValueParser(limit = 1, start_time = pt('2016-01-28 16:00 -0500')))
+test(EnumerationValueParser(limit = 1, end_time = pt('2016-01-28 16:00 -0500')))
+test(EnumerationValueParser(limit = 1, start_seqnum = 507279000000))
+test(EnumerationValueParser(limit = 1, end_seqnum = 507279000000))
+
+test(WaveAttrParser(limit = 2))
+test(WaveAttrParser(limit = 1, wave_id = 1)) # (ART)
+
+test(NumericAttrParser(limit = 2))
+test(NumericAttrParser(limit = 1, numeric_id = 1)) # (HR)
+
+test(EnumerationAttrParser(limit = 2))
+test(EnumerationAttrParser(limit = 1, enumeration_id = 1)) # (RhySta)
+
+test(BedTagParser(limit = 2))
+test(BedTagParser(limit = 1, bed_label = 'CDBed1'))
+test(BedTagParser(limit = 1, start_time = pt('2016-01-28 12:00 -0500')))
+test(BedTagParser(limit = 1, end_time = pt('2016-01-28 16:00 -0500')))
+
+test(PatientDateAttributeParser(limit = 2))
+test(PatientDateAttributeParser(limit = 1, patient_id = '31c1da32-2ea1-4166-a7eb-2d9738967412'))
+test(PatientDateAttributeParser(limit = 1, attr = 'DOB'))
+test(PatientDateAttributeParser(limit = 1, start_time = pt('2016-01-28 12:00 -0500')))
+test(PatientDateAttributeParser(limit = 1, end_time = pt('2016-01-28 16:00 -0500')))
+
+test(PatientStringAttributeParser(limit = 2))
+test(PatientStringAttributeParser(limit = 1, patient_id = '31c1da32-2ea1-4166-a7eb-2d9738967412'))
+test(PatientStringAttributeParser(limit = 1, attr = 'FirstName'))
+test(PatientStringAttributeParser(limit = 1, start_time = pt('2016-01-28 12:00 -0500')))
+test(PatientStringAttributeParser(limit = 1, end_time = pt('2016-01-28 16:00 -0500')))
+
+test(PatientBasicInfoParser(limit = 2))
+test(PatientBasicInfoParser(limit = 1, patient_id = '31c1da32-2ea1-4166-a7eb-2d9738967412'))
+test(PatientBasicInfoParser(limit = 1, start_time = pt('2016-01-28 12:00 -0500')))
+test(PatientBasicInfoParser(limit = 1, end_time = pt('2016-01-28 16:00 -0500')))
+
+test(PatientMappingParser(limit = 2))
+test(PatientMappingParser(limit = 1, patient_id = '31c1da32-2ea1-4166-a7eb-2d9738967412'))
+test(PatientMappingParser(limit = 1, mapping_id = '466fcc4c-7d8c-4c59-b00c-80aba6e7605d'))
+test(PatientMappingParser(limit = 1, start_time = pt('2016-01-28 12:00 -0500')))
+test(PatientMappingParser(limit = 1, end_time = pt('2016-01-28 16:00 -0500')))
+test(PatientMappingParser(limit = 1, hostname = 'RDEGEN8-1'))
+
