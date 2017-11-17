@@ -23,7 +23,7 @@ class MessageParser:
         else:
             raise ValueError('unknown paramstyle')
 
-    def _gen_query(self, limit, table, columns, constraints):
+    def _gen_query(self, limit, table, columns, constraints, order):
         qstr = 'SELECT '
         if limit is not None and self.dialect == 'ms':
             qstr += ('TOP %d ' % limit)
@@ -33,6 +33,8 @@ class MessageParser:
             qstr += ' WHERE '
             qstr += ' AND '.join(c[0] + self._pmark for c in constraints)
             params = list(c[1] for c in constraints)
+        if order is not None:
+            qstr += (' ORDER BY ' + order)
         if limit is not None and self.dialect != 'ms':
             qstr += (' LIMIT %d' % limit)
         return (qstr, tuple(params))
@@ -41,9 +43,10 @@ class SimpleMessageParser(MessageParser):
     """Abstract class for parsing single-row messages.
 
     Classes derived from this one must provide a function 'table'
-    which returns the name of the table to be queried, and a function
-    'parse_columns' which constructs the message object based on the
-    columns of that table.
+    which returns the name of the table to be queried, a function
+    'order' which defines the order (normally a column name), and a
+    function 'parse_columns' which constructs the message object based
+    on the columns of that table.
 
     Additional constraints ('where' clauses) can be added to the query
     by calling 'add_constraint' in the constructor.
@@ -70,20 +73,11 @@ class SimpleMessageParser(MessageParser):
             return None
         self.parse_columns(None, add_column)
 
-        # XXX We want results in chronological order (in almost all
-        # cases.)  The server returns results in chronological order
-        # by default, but should we include an explicit order in the
-        # query?  If at some point the server *switches* from sorting
-        # by timestamp to sorting by sequence number, or vice versa,
-        # then asking for an explicit order would require the server
-        # to retrieve and sort a potentially vast number of rows -
-        # avoiding this is the main reason for doing chronological
-        # processing in the first place.
-
         query = self._gen_query(limit = self.limit,
                                 table = self.table(),
                                 columns = columns,
-                                constraints = self._constraints)
+                                constraints = self._constraints,
+                                order = self.order())
 
         def handle_row(origin, row):
             def parse_column(name, conv, mandatory = False):
@@ -190,6 +184,8 @@ class WaveSampleParser(MappingIDMessageParser):
     """Parser for wave sample messages."""
     def table(self):
         return '_Export.WaveSample_'
+    def order(self):
+        return 'TimeStamp'
     def parse_columns(self, origin, cols):
         return WaveSampleMessage(
             origin              = origin,
@@ -206,6 +202,8 @@ class AlertParser(MappingIDMessageParser):
     """Parser for alert messages."""
     def table(self):
         return '_Export.Alert_'
+    def order(self):
+        return 'TimeStamp'
     def parse_columns(self, origin, cols):
         return AlertMessage(
             origin          = origin,
@@ -228,6 +226,8 @@ class NumericValueParser(MappingIDMessageParser):
     """Parser for numeric value messages."""
     def table(self):
         return '_Export.NumericValue_'
+    def order(self):
+        return 'TimeStamp'
     def parse_columns(self, origin, cols):
         return NumericValueMessage(
             origin            = origin,
@@ -243,6 +243,8 @@ class EnumerationValueParser(MappingIDMessageParser):
     """Parser for enumeration value messages."""
     def table(self):
         return '_Export.EnumerationValue_'
+    def order(self):
+        return 'TimeStamp'
     def parse_columns(self, origin, cols):
         return EnumerationValueMessage(
             origin            = origin,
@@ -265,6 +267,8 @@ class WaveAttrParser(SimpleMessageParser):
 
     def table(self):
         return '_Export.Wave_'
+    def order(self):
+        return None
     def parse_columns(self, origin, cols):
         # sample_period is needed for proper waveform processing.
         # All other attributes are informational only.
@@ -301,6 +305,8 @@ class NumericAttrParser(SimpleMessageParser):
 
     def table(self):
         return '_Export.Numeric_'
+    def order(self):
+        return None
     def parse_columns(self, origin, cols):
         return NumericAttr(
             base_physio_id  = cols('BasePhysioId',  _integer),
@@ -328,6 +334,8 @@ class EnumerationAttrParser(SimpleMessageParser):
 
     def table(self):
         return '_Export.Enumeration_'
+    def order(self):
+        return None
     def parse_columns(self, origin, cols):
         return EnumerationAttr(
             base_physio_id  = cols('BasePhysioId',  _integer),
@@ -357,6 +365,8 @@ class BedTagParser(SimpleMessageParser):
 
     def table(self):
         return '_Export.BedTag_'
+    def order(self):
+        return 'Timestamp'
     def parse_columns(self, origin, cols):
         return BedTagMessage(
             origin    = origin,
@@ -380,6 +390,8 @@ class PatientDateAttributeParser(SimpleMessageParser):
 
     def table(self):
         return '_Export.PatientDateAttribute_'
+    def order(self):
+        return 'Timestamp'
     def parse_columns(self, origin, cols):
         return PatientDateAttributeMessage(
             origin     = origin,
@@ -404,6 +416,8 @@ class PatientStringAttributeParser(SimpleMessageParser):
 
     def table(self):
         return '_Export.PatientStringAttribute_'
+    def order(self):
+        return 'Timestamp'
     def parse_columns(self, origin, cols):
         return PatientStringAttributeMessage(
             origin     = origin,
@@ -426,6 +440,8 @@ class PatientBasicInfoParser(SimpleMessageParser):
 
     def table(self):
         return '_Export.Patient_'
+    def order(self):
+        return 'Timestamp'
     def parse_columns(self, origin, cols):
         return PatientBasicInfoMessage(
             origin               = origin,
@@ -463,6 +479,8 @@ class PatientMappingParser(SimpleMessageParser):
 
     def table(self):
         return '_Export.PatientMapping_'
+    def order(self):
+        return 'Timestamp'
     def parse_columns(self, origin, cols):
         return PatientMappingMessage(
             origin            = origin,
