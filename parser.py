@@ -93,16 +93,37 @@ class SimpleMessageParser(MessageParser):
 
         return [(query, handle_row)]
 
-class MappingIDMessageParser(SimpleMessageParser):
+class TimestampMessageParser(SimpleMessageParser):
+    """Abstract class for parsing record data messages.
+
+    This class can be used for tables that include 'TimeStamp'
+    columns.
+    """
+    def __init__(self, time = None, time_ge = None, time_le = None,
+                 time_gt = None, time_lt = None, **kwargs):
+        SimpleMessageParser.__init__(self, **kwargs)
+
+        if time is not None:
+            self.add_constraint('TimeStamp = ', _to_timestamp(time))
+        if time_ge is not None:
+            self.add_constraint('TimeStamp >= ', _to_timestamp(time_ge))
+        if time_le is not None:
+            self.add_constraint('TimeStamp <= ', _to_timestamp(time_le))
+        if time_gt is not None:
+            self.add_constraint('TimeStamp > ', _to_timestamp(time_gt))
+        if time_lt is not None:
+            self.add_constraint('TimeStamp < ', _to_timestamp(time_lt))
+
+class MappingIDMessageParser(TimestampMessageParser):
     """Abstract class for parsing record data messages.
 
     This class can be used for tables that include 'MappingId',
     'TimeStamp', and 'SequenceNumber' columns.
     """
-    def __init__(self, mapping_id = None,
-                 start_time = None, end_time = None,
-                 start_seqnum = None, end_seqnum = None, **kwargs):
-        SimpleMessageParser.__init__(self, **kwargs)
+    def __init__(self, mapping_id = None, seqnum = None,
+                 seqnum_ge = None, seqnum_le = None,
+                 seqnum_gt = None, seqnum_lt = None, **kwargs):
+        TimestampMessageParser.__init__(self, **kwargs)
 
         # XXX Does the order we apply constraints make any difference?
         # Guessing not but it might be worth looking into.
@@ -112,14 +133,17 @@ class MappingIDMessageParser(SimpleMessageParser):
 
         if mapping_id is not None:
             self.add_constraint('MappingId = ', _to_uuid(mapping_id))
-        if start_time is not None:
-            self.add_constraint('TimeStamp >= ', _to_timestamp(start_time))
-        if end_time is not None:
-            self.add_constraint('TimeStamp < ', _to_timestamp(end_time))
-        if start_seqnum is not None:
-            self.add_constraint('SequenceNumber >= ', start_seqnum)
-        if end_seqnum is not None:
-            self.add_constraint('SequenceNumber < ', end_seqnum)
+
+        if seqnum is not None:
+            self.add_constraint('SequenceNumber = ', seqnum)
+        if seqnum_ge is not None:
+            self.add_constraint('SequenceNumber >= ', seqnum_ge)
+        if seqnum_le is not None:
+            self.add_constraint('SequenceNumber <= ', seqnum_le)
+        if seqnum_gt is not None:
+            self.add_constraint('SequenceNumber > ', seqnum_gt)
+        if seqnum_lt is not None:
+            self.add_constraint('SequenceNumber < ', seqnum_lt)
 
 ################################################################
 
@@ -351,15 +375,10 @@ class EnumerationAttrParser(SimpleMessageParser):
 
 ################################################################
 
-class BedTagParser(SimpleMessageParser):
+class BedTagParser(TimestampMessageParser):
     """Parser for bed tags."""
-    def __init__(self, bed_label = None,
-                 start_time = None, end_time = None, **kwargs):
-        SimpleMessageParser.__init__(self, **kwargs)
-        if start_time is not None:
-            self.add_constraint('Timestamp >= ', _to_timestamp(start_time))
-        if end_time is not None:
-            self.add_constraint('Timestamp < ', _to_timestamp(end_time))
+    def __init__(self, bed_label = None, **kwargs):
+        TimestampMessageParser.__init__(self, **kwargs)
         if bed_label is not None:
             self.add_constraint('BedLabel = ', bed_label)
 
@@ -374,15 +393,10 @@ class BedTagParser(SimpleMessageParser):
             timestamp = cols('Timestamp', _timestamp, True),
             tag       = cols('Tag',       _string, True))
 
-class PatientDateAttributeParser(SimpleMessageParser):
+class PatientDateAttributeParser(TimestampMessageParser):
     """Parser for patient date attributes."""
-    def __init__(self, patient_id = None, attr = None,
-                 start_time = None, end_time = None, **kwargs):
-        SimpleMessageParser.__init__(self, **kwargs)
-        if start_time is not None:
-            self.add_constraint('Timestamp >= ', _to_timestamp(start_time))
-        if end_time is not None:
-            self.add_constraint('Timestamp < ', _to_timestamp(end_time))
+    def __init__(self, patient_id = None, attr = None, **kwargs):
+        TimestampMessageParser.__init__(self, **kwargs)
         if patient_id is not None:
             self.add_constraint('PatientId = ', _to_uuid(patient_id))
         if attr is not None:
@@ -400,15 +414,10 @@ class PatientDateAttributeParser(SimpleMessageParser):
             name       = cols('Name',      _string, True),
             value      = cols('Value',     _date))
 
-class PatientStringAttributeParser(SimpleMessageParser):
+class PatientStringAttributeParser(TimestampMessageParser):
     """Parser for patient string attributes."""
-    def __init__(self, patient_id = None, attr = None,
-                 start_time = None, end_time = None, **kwargs):
-        SimpleMessageParser.__init__(self, **kwargs)
-        if start_time is not None:
-            self.add_constraint('Timestamp >= ', _to_timestamp(start_time))
-        if end_time is not None:
-            self.add_constraint('Timestamp < ', _to_timestamp(end_time))
+    def __init__(self, patient_id = None, attr = None, **kwargs):
+        TimestampMessageParser.__init__(self, **kwargs)
         if patient_id is not None:
             self.add_constraint('PatientId = ', _to_uuid(patient_id))
         if attr is not None:
@@ -426,15 +435,10 @@ class PatientStringAttributeParser(SimpleMessageParser):
             name       = cols('Name',      _string, True),
             value      = cols('Value',     _string))
 
-class PatientBasicInfoParser(SimpleMessageParser):
+class PatientBasicInfoParser(TimestampMessageParser):
     """Parser for patient basic info."""
-    def __init__(self, patient_id = None,
-                 start_time = None, end_time = None, **kwargs):
-        SimpleMessageParser.__init__(self, **kwargs)
-        if start_time is not None:
-            self.add_constraint('Timestamp >= ', _to_timestamp(start_time))
-        if end_time is not None:
-            self.add_constraint('Timestamp < ', _to_timestamp(end_time))
+    def __init__(self, patient_id = None, **kwargs):
+        TimestampMessageParser.__init__(self, **kwargs)
         if patient_id is not None:
             self.add_constraint('Id = ', _to_uuid(patient_id))
 
@@ -461,15 +465,11 @@ class PatientBasicInfoParser(SimpleMessageParser):
             clinical_unit        = cols('ClinicalUnit',        _string),
             gender               = cols('Gender',              _integer))
 
-class PatientMappingParser(SimpleMessageParser):
+class PatientMappingParser(TimestampMessageParser):
     """Parser for patient mapping info."""
-    def __init__(self, patient_id = None, mapping_id = None, hostname = None,
-                 start_time = None, end_time = None, **kwargs):
-        SimpleMessageParser.__init__(self, **kwargs)
-        if start_time is not None:
-            self.add_constraint('Timestamp >= ', _to_timestamp(start_time))
-        if end_time is not None:
-            self.add_constraint('Timestamp < ', _to_timestamp(end_time))
+    def __init__(self, patient_id = None, mapping_id = None,
+                 hostname = None, **kwargs):
+        TimestampMessageParser.__init__(self, **kwargs)
         if mapping_id is not None:
             self.add_constraint('Id = ', _to_uuid(mapping_id))
         if patient_id is not None:
