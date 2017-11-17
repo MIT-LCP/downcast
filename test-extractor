@@ -1,0 +1,24 @@
+#!/usr/bin/python3
+
+from server import DWCDB
+from extractor import (Extractor, WaveSampleQueue, NumericValueQueue,
+                       EnumerationValueQueue, AlertQueue)
+
+class TestHandler():
+    def send_message(self, channel, message, source, ttl):
+        print('%s\t%s\t%s' % (message.timestamp, channel,
+                              type(message).__name__))
+        source.ack_message(channel, message, self)
+
+DWCDB.load_config('server.conf')
+db = DWCDB('demo')
+ex = Extractor(db, '/tmp/downcast-extractor-test')
+
+ex.add_handler(TestHandler())
+
+ex.add_queue(WaveSampleQueue('waves'))
+ex.add_queue(NumericValueQueue('numerics'))
+ex.add_queue(EnumerationValueQueue('enums'))
+ex.add_queue(AlertQueue('alerts'))
+
+ex.run()
