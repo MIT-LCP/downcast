@@ -1,0 +1,152 @@
+Block diagram
+=============
+
+         +-----------+
+         |           |
+         | Extractor |
+         |           |
+         +-----------+
+               |
+               | schedules
+               | queries
+               v
+      +----------------+
+      |                |   sets parameters   +---------------+
+      |                | ------------------> |               |
+      |                |    generates SQL    | MessageParser |
+      |                | <------------------ |               |
+      | ExtractorQueue |                     +---------------+
+      |                |
+      |                |       +-------------+
+      |                | ----> | state files |
+      |                |       +-------------+
+      +----------------+
+       sends |    ^
+    messages |    | sends
+             v    | acknowledgements
+        +------------+
+        |            |
+        | Dispatcher |
+        |            |
+        +------------+
+       sends |    ^
+    messages |    | sends
+             v    | acknowledgements
+       +--------------+
+       |              |       +--------------+
+       | OuputHandler | ----> | output files |
+       |              |       +--------------+
+       +--------------+
+
+
+Extractor
+=========
+
+ The Extractor manages the overall flow of the conversion process:
+ deciding the order that queries are issued.
+
+ Messages will need to be retrieved from many different sources,
+ represented by "queues", and then passed on to the dispatcher and
+ output handlers.  The task of the extractor is to decide which
+ queue(s) to read.
+
+ (A "message", by the way, is an object that will generally correspond
+ to a single row in a single table of the DWC database, but this may
+ not always be the case.)
+
+
+ExtractorQueue
+==============
+
+ An ExtractorQueue is created for each input data source (~ each
+ database table that is to be polled.)
+
+ The ExtractorQueue, with the help of a MessageParser, determines what
+ SQL queries are to be issued, making sure that no messages are missed
+ while avoiding (as much as possible) querying the same message more
+ than once.  This is closely related to the task of tracking which
+ messages have been seen and acknowledged so far.
+
+ In general, there will be some "earliest unacked" timestamp (before
+ which, all messages have been acknowledged), and some "latest seen"
+ timestamp (after which, no messages have yet been seen.)  In between
+ are the messages that have been seen but not yet acknowledged.
+
+ When conversion is halted, the queue will need to save a state file
+ containing:
+
+  - the "earliest unacked" timestamp
+
+  - a list of all the messages after that point that have already been
+    acknowledged
+
+ so that when conversion is resumed, it can resume from the same
+ point, and ideally ignore all messages that have already been
+ processed.  The format of this state file needs to be determined; it
+ must be fairly simple and robust, so that newer versions of the
+ program can read state files created by older versions, and vice
+ versa.
+
+
+MessageParser
+=============
+
+ A MessageParser handles the actual details of the database structure:
+ how to translate a particular request for messages into an SQL
+ statement, and how to translate the results into the appropriate
+ message type.  If details of the database are changed from one DWC
+ version to another, this is where they will need to be addressed.
+
+
+Dispatcher
+==========
+
+ The Dispatcher keeps track of all messages that have been received by
+ the various queues, and passes them on to the various output
+ handlers.
+
+ The chief purpose of having an intermediate dispatcher object is to
+ ensure that all messages, whatever their origin, will eventually
+ expire, and will not be kept in "seen but not yet acknowledged" state
+ indefinitely.
+
+
+OutputHandler
+=============
+
+ The various OutputHandlers are responsible for interpreting the
+ incoming messages and storing them in the appropriate output files.
+
+ When a handler receives a message, it can do several things with it:
+
+  - ignore it, implicitly indicating that the handler doesn't know
+    what to do with it;
+
+  - acknowledge it, indicating that its contents have now been saved
+    to the appropriate output file, and the message may now be
+    discarded;
+
+  - or defer it, indicating that the handler is interested in this
+    message but is unable to process it immediately.
+
+ Deferring a message can occur for several reasons:
+
+  - because the handler requires additional metadata that is not yet
+    available;
+
+  - because the handler wants to aggregate all simultaneous events
+    (e.g., numerics or wave samples) in a single file, and it hasn't
+    yet received all of the messages for this time period;
+
+  - or because the messages it has received are not in chronological
+    order, and it's waiting to see if a later message will fill in the
+    gap.
+
+ (The precise details will need to be established once we have an
+ actual database to examine; for example, we don't currently know
+ whether it's even possible for messages to appear out of order.)
+
+ In addition to incomplete output files, output handlers must be able
+ to save their current state to appropriate state files, so that (just
+ as with queue state files) the program can be stopped and restarted
+ without creating any discontinuity in the output.
