@@ -88,3 +88,5 @@ class T(datetime):
 
     def __repr__(self):
         return ('%s(%r)' % (self.__class__.__name__, T.__str__(self)))
+
+very_old_timestamp = T('1800-01-01 00:00:00.000 +00:00')

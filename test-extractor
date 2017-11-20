@@ -3,6 +3,7 @@
 from server import DWCDB
 from extractor import (Extractor, WaveSampleQueue, NumericValueQueue,
                        EnumerationValueQueue, AlertQueue)
+from timestamp import T
 
 class TestHandler():
     def send_message(self, channel, message, source, ttl):
@@ -16,9 +17,11 @@ ex = Extractor(db, '/tmp/downcast-extractor-test')
 
 ex.add_handler(TestHandler())
 
-ex.add_queue(WaveSampleQueue('waves'))
-ex.add_queue(NumericValueQueue('numerics'))
-ex.add_queue(EnumerationValueQueue('enums'))
-ex.add_queue(AlertQueue('alerts'))
+st = T('2016-01-28 14:00:00.000 -05:00')
+ex.add_queue(WaveSampleQueue('waves', start_time = st))
+ex.add_queue(NumericValueQueue('numerics', start_time = st))
+ex.add_queue(EnumerationValueQueue('enums', start_time = st))
+ex.add_queue(AlertQueue('alerts', start_time = st))
 
-ex.run()
+for _ in range(100):
+    ex.run()

@@ -1,5 +1,5 @@
 from collections import OrderedDict
-import heapq
+from datetime import timedelta
 
 from dispatcher import Dispatcher
 from parser import (WaveSampleParser, NumericValueParser,
@@ -7,6 +7,7 @@ from parser import (WaveSampleParser, NumericValueParser,
                     PatientMappingParser, PatientBasicInfoParser,
                     PatientDateAttributeParser,
                     PatientStringAttributeParser, BedTagParser)
+from timestamp import very_old_timestamp
 
 class Extractor:
     def __init__(self, db, dest_dir):
@@ -14,10 +15,13 @@ class Extractor:
         self.dest_dir = dest_dir
         self.queues = []
         self.dispatcher = Dispatcher()
-        self.conns = {}
+        self.conn = db.connect()
+        self.current_timestamp = very_old_timestamp
+        self.queue_timestamp = OrderedDict()
 
     def add_queue(self, queue):
         self.queues.append(queue)
+        self.queue_timestamp[queue] = very_old_timestamp
 
     def add_handler(self, handler):
         self.dispatcher.add_handler(handler)
@@ -26,56 +30,109 @@ class Extractor:
         self.dispatcher.add_dead_letter_handler(handler)
 
     def run(self):
-        lists = []
-        for q in self.queues:
-            if q not in self.conns:
-                self.conns[q] = self.db.connect()
-            lists.append(self._messages(self.conns[q], q, len(lists)))
+        # Find the most out-of-date queue.
+        q = min(self.queues, key = self.queue_timestamp.get)
 
-        # Repeatedly pull the oldest message, and submit it via the
-        # appropriate queue
-        for (ts, ind, q, msg) in heapq.merge(*lists):
-            q.push_message(msg, self.dispatcher)
+        # If the oldest queue timestamp is greater than the current
+        # timestamp, then *all* queues must now be idle; in that case,
+        # ignore timestamps and handle queues in round-robin order.
+        if self.queue_timestamp[q] > self.current_timestamp:
+            q = next(iter(self.queue_timestamp))
+            self.queue_timestamp.move_to_end(q)
 
-    def _messages(self, conn, q, index):
-        # FIXME: this should actually keep going until it reaches the
-        # present time.  make it finite here, just for testing...
-        parser = q.next_message_parser(self.db)
+        # Retrieve and submit a batch of messages.
+        try:
+            cursor = self.conn.cursor()
+            self._run_queries(q, cursor)
+        finally:
+            cursor.close()
+
+    def _run_queries(self, queue, cursor):
+        parser = queue.next_message_parser(self.db)
         for (query, handler) in parser.queries():
-            cursor = conn.cursor()
             print(str(query))
             cursor.execute(*query)
             row = cursor.fetchone()
             while row is not None:
                 msg = handler(self.db, row)
                 if msg is not None:
-                    yield (q.message_timestamp(msg), index, q, msg)
+                    ts = queue.message_timestamp(msg)
+
+                    # FIXME: should disregard timestamps that are
+                    # completely absurd (but maybe those should be
+                    # thrown away at a lower level.)
+
+                    # current_timestamp = maximum timestamp of any
+                    # message we've seen so far
+                    if ts > self.current_timestamp:
+                        self.current_timestamp = ts
+
+                    # queue_timestamp = maximum timestamp of any
+                    # message we've seen in this queue
+                    if ts > self.queue_timestamp[queue]:
+                        self.queue_timestamp[queue] = ts
+
+                    queue.push_message(msg, self.dispatcher)
                 row = cursor.fetchone()
-            cursor.close()
+
+        # If this queue has reached the present time, put it to
+        # sleep for some minimum time period before hitting it
+        # again.  The delay time is dependent on the queue type.
+        if queue.reached_present():
+            self.queue_timestamp[queue] = (self.current_timestamp
+                                           + queue.idle_delay())
 
 class ExtractorQueue:
-    def __init__(self, queue_name):
+    def __init__(self, queue_name, start_time = None):
         self.queue_name = queue_name
-        self.newest_seen_timestamp = None
-        self.oldest_unacked_timestamp = None
+        self.newest_seen_timestamp = start_time
+        self.oldest_unacked_timestamp = start_time
         self.acked_saved = None
         self.acked_new = OrderedDict()
         self.unacked_new = OrderedDict()
         self.limit_per_batch = 100 # XXX
+        self.last_batch_count_at_newest = 0
+        self.last_batch_limit = 0
+        self.last_batch_count = 0
 
     def next_message_parser(self, db):
-        # FIXME: this will fail badly if there are more than
-        # 'limit_per_batch' messages at the same timestamp.  we need
-        # to keep track of how many messages we saw last time, and if
-        # necessary, issue a compound query like 'all messages at
+        # this is a bit of a kludge: if batch limit is too small (more
+        # than limit/2 messages with exactly the same timestamp),
+        # double it until this is no longer true.  possibly better
+        # would be to issue a compound query like 'all messages at
         # timestamp T, plus the first N messages at timestamp > T'.
-        return self.message_parser(db, self.newest_seen_timestamp,
-                                   self.limit_per_batch)
+
+        n = self.limit_per_batch
+        while n < (self.last_batch_count_at_newest * 2):
+            n *= 2
+        self.last_batch_limit = n
+        self.last_batch_count = 0
+        self.last_batch_count_at_newest = 0
+        return self.message_parser(db, self.newest_seen_timestamp, n)
+
+    def reached_present(self):
+        # this is nasty.  we want to answer the question "did the
+        # previous query end because we reached the limit of available
+        # data, or because we reached the batch limit?"  once we've
+        # reached the end of available data then we do not want to hit
+        # this queue again until all other queues catch up.
+
+        # of course "present" doesn't mean "current time on the system
+        # where this code is running" or even "current time on the
+        # exporting system", it means "timestamp of data that is
+        # currently being inserted into DWC database."
+
+        # XXX determine whether there is any situation under which the
+        # query could be aborted without returning all requested
+        # results, that would NOT raise an exception.  in such a
+        # situation, the queue should not be treated as up-to-date.
+        return (self.last_batch_count < self.last_batch_limit)
 
     def push_message(self, message, dispatcher):
         ts = self.message_timestamp(message)
         channel = self.message_channel(message)
         ttl = self.message_ttl(message)
+        self.last_batch_count += 1
 
         if self.newest_seen_timestamp is not None:
             if ts < self.newest_seen_timestamp:
@@ -86,7 +143,12 @@ class ExtractorQueue:
                 self._log_warning('Unexpected message at %s; ignored' % ts)
                 return
 
-        self.newest_seen_timestamp = ts
+        if ts == self.newest_seen_timestamp:
+            self.last_batch_count_at_newest += 1
+        else:
+            self.newest_seen_timestamp = ts
+            self.last_batch_count_at_newest = 1
+
         if ts not in self.unacked_new:
             self.unacked_new[ts] = set()
         if ts not in self.acked_new:
@@ -144,7 +206,7 @@ class ExtractorQueue:
         if ts is None:
             return
         if (self.oldest_unacked_timestamp is not None
-            and ts <= self.oldest_unacked_timestamp):
+                and ts <= self.oldest_unacked_timestamp):
             return
 
         # ts is now the oldest unacked timestamp
@@ -198,6 +260,8 @@ class WaveSampleQueue(MappingIDExtractorQueue):
                                 paramstyle = db.paramstyle(),
                                 time_ge = start_timestamp,
                                 limit = limit)
+    def idle_delay(self):
+        return timedelta(milliseconds = 500)
 
 class NumericValueQueue(MappingIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
@@ -205,6 +269,8 @@ class NumericValueQueue(MappingIDExtractorQueue):
                                   paramstyle = db.paramstyle(),
                                   time_ge = start_timestamp,
                                   limit = limit)
+    def idle_delay(self):
+        return timedelta(seconds = 1)
 
 class EnumerationValueQueue(MappingIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
@@ -212,6 +278,8 @@ class EnumerationValueQueue(MappingIDExtractorQueue):
                                       paramstyle = db.paramstyle(),
                                       time_ge = start_timestamp,
                                       limit = limit)
+    def idle_delay(self):
+        return timedelta(milliseconds = 500)
 
 class AlertQueue(MappingIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
@@ -219,6 +287,8 @@ class AlertQueue(MappingIDExtractorQueue):
                            paramstyle = db.paramstyle(),
                            time_ge = start_timestamp,
                            limit = limit)
+    def idle_delay(self):
+        return timedelta(seconds = 1)
 
 class PatientMappingQueue(MappingIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
@@ -226,6 +296,8 @@ class PatientMappingQueue(MappingIDExtractorQueue):
                                     paramstyle = db.paramstyle(),
                                     time_ge = start_timestamp,
                                     limit = limit)
+    def idle_delay(self):
+        return timedelta(minutes = 5)
 
 class PatientBasicInfoQueue(PatientIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
@@ -233,6 +305,8 @@ class PatientBasicInfoQueue(PatientIDExtractorQueue):
                                       paramstyle = db.paramstyle(),
                                       time_ge = start_timestamp,
                                       limit = limit)
+    def idle_delay(self):
+        return timedelta(minutes = 31)
 
 class PatientDateAttributeQueue(PatientIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
@@ -240,6 +314,8 @@ class PatientDateAttributeQueue(PatientIDExtractorQueue):
                                           paramstyle = db.paramstyle(),
                                           time_ge = start_timestamp,
                                           limit = limit)
+    def idle_delay(self):
+        return timedelta(minutes = 32)
 
 class PatientStringAttributeQueue(PatientIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
@@ -247,6 +323,8 @@ class PatientStringAttributeQueue(PatientIDExtractorQueue):
                                             paramstyle = db.paramstyle(),
                                             time_ge = start_timestamp,
                                             limit = limit)
+    def idle_delay(self):
+        return timedelta(minutes = 33)
 
 class BedTagQueue(ExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
@@ -260,3 +338,5 @@ class BedTagQueue(ExtractorQueue):
         return message.timestamp
     def message_ttl(self, message):
         return 1000             # XXX
+    def idle_delay(self):
+        return timedelta(minutes = 34)
