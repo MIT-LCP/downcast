@@ -13,7 +13,7 @@ WaveSampleMessage = namedtuple('WaveSampleMessage', (
     # different ID.)  Underlying type is 'bigint'.
     'wave_id',
 
-    # A timestamp, origin unknown.
+    # A timestamp (probably from DWC or SQL.)
     'timestamp',
 
     # Apparently a uniform counter (i.e., runs continuously, never
@@ -55,10 +55,10 @@ AlertMessage = namedtuple('AlertMessage', (
     # The original data source.
     'origin',
 
-    # A timestamp, origin unknown.
+    # A timestamp (probably from DWC or SQL.)
     'timestamp',
 
-    # Sequence number.  Corresponding to 'timestamp', I guess?
+    # Sequence number.  Corresponds to what?
     'sequence_number',
 
     # An opaque identifier (probably a GUID) for the particular alarm.
@@ -89,13 +89,13 @@ AlertMessage = namedtuple('AlertMessage', (
     # Undocumented magic number.  Underlying type is 'bigint'.
     'subtype_id',
 
-    # ???
+    # Time that the alarm is reported? (probably from monitor)
     'announce_time',
 
-    # ???
+    # Time that the triggering condition begins? (probably from monitor)
     'onset_time',
 
-    # ???
+    # Time that ??? ends (probably from monitor)
     'end_time',
 
     # Should correspond to 'mapping_id' in PatientMappingMessage.
@@ -114,7 +114,7 @@ EnumerationValueMessage = namedtuple('EnumerationValueMessage', (
     # immutable.  Underlying type is 'bigint'.
     'enumeration_id',
 
-    # A timestamp, origin unknown.
+    # A timestamp (probably from DWC or SQL.)
     'timestamp',
 
     # Sequence number when the observation was made.
@@ -143,7 +143,7 @@ NumericValueMessage = namedtuple('NumericValueMessage', (
     # immutable.  Underlying type is 'bigint'.
     'numeric_id',
 
-    # A timestamp, origin unknown.
+    # A timestamp (probably from DWC or SQL.)
     'timestamp',
 
     # Sequence number when the measurement was made.
