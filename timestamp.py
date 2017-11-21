@@ -107,4 +107,12 @@ class T(datetime):
     def __repr__(self):
         return ('%s(%r)' % (self.__class__.__name__, T.__str__(self)))
 
+    def strftime_local(self, fmt):
+        """Format time as a string, using its original timezone."""
+        return datetime.strftime(self, fmt)
+
+    def strftime_utc(self, fmt):
+        """Convert time to UTC and format as a string."""
+        return datetime.strftime(self.astimezone(timezone.utc), fmt)
+
 very_old_timestamp = T('1800-01-01 00:00:00.000 +00:00')
