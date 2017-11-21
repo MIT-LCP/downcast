@@ -47,6 +47,9 @@ class Extractor:
     def add_dead_letter_handler(self, handler):
         self.dispatcher.add_dead_letter_handler(handler)
 
+    def flush(self):
+        self.dispatcher.flush()
+
     def run(self):
         # Find the most out-of-date queue.
         q = min(self.queues, key = self.queue_timestamp.get)
