@@ -274,8 +274,8 @@ class PatientIDExtractorQueue(ExtractorQueue):
 
 class WaveSampleQueue(MappingIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
-        return WaveSampleParser(dialect = db.dialect(),
-                                paramstyle = db.paramstyle(),
+        return WaveSampleParser(dialect = db.dialect,
+                                paramstyle = db.paramstyle,
                                 time_ge = start_timestamp,
                                 limit = limit)
     def idle_delay(self):
@@ -283,8 +283,8 @@ class WaveSampleQueue(MappingIDExtractorQueue):
 
 class NumericValueQueue(MappingIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
-        return NumericValueParser(dialect = db.dialect(),
-                                  paramstyle = db.paramstyle(),
+        return NumericValueParser(dialect = db.dialect,
+                                  paramstyle = db.paramstyle,
                                   time_ge = start_timestamp,
                                   limit = limit)
     def idle_delay(self):
@@ -292,8 +292,8 @@ class NumericValueQueue(MappingIDExtractorQueue):
 
 class EnumerationValueQueue(MappingIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
-        return EnumerationValueParser(dialect = db.dialect(),
-                                      paramstyle = db.paramstyle(),
+        return EnumerationValueParser(dialect = db.dialect,
+                                      paramstyle = db.paramstyle,
                                       time_ge = start_timestamp,
                                       limit = limit)
     def idle_delay(self):
@@ -301,8 +301,8 @@ class EnumerationValueQueue(MappingIDExtractorQueue):
 
 class AlertQueue(MappingIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
-        return AlertParser(dialect = db.dialect(),
-                           paramstyle = db.paramstyle(),
+        return AlertParser(dialect = db.dialect,
+                           paramstyle = db.paramstyle,
                            time_ge = start_timestamp,
                            limit = limit)
     def idle_delay(self):
@@ -310,8 +310,8 @@ class AlertQueue(MappingIDExtractorQueue):
 
 class PatientMappingQueue(MappingIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
-        return PatientMappingParser(dialect = db.dialect(),
-                                    paramstyle = db.paramstyle(),
+        return PatientMappingParser(dialect = db.dialect,
+                                    paramstyle = db.paramstyle,
                                     time_ge = start_timestamp,
                                     limit = limit)
     def idle_delay(self):
@@ -319,8 +319,8 @@ class PatientMappingQueue(MappingIDExtractorQueue):
 
 class PatientBasicInfoQueue(PatientIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
-        return PatientBasicInfoParser(dialect = db.dialect(),
-                                      paramstyle = db.paramstyle(),
+        return PatientBasicInfoParser(dialect = db.dialect,
+                                      paramstyle = db.paramstyle,
                                       time_ge = start_timestamp,
                                       limit = limit)
     def idle_delay(self):
@@ -328,8 +328,8 @@ class PatientBasicInfoQueue(PatientIDExtractorQueue):
 
 class PatientDateAttributeQueue(PatientIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
-        return PatientDateAttributeParser(dialect = db.dialect(),
-                                          paramstyle = db.paramstyle(),
+        return PatientDateAttributeParser(dialect = db.dialect,
+                                          paramstyle = db.paramstyle,
                                           time_ge = start_timestamp,
                                           limit = limit)
     def idle_delay(self):
@@ -337,8 +337,8 @@ class PatientDateAttributeQueue(PatientIDExtractorQueue):
 
 class PatientStringAttributeQueue(PatientIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
-        return PatientStringAttributeParser(dialect = db.dialect(),
-                                            paramstyle = db.paramstyle(),
+        return PatientStringAttributeParser(dialect = db.dialect,
+                                            paramstyle = db.paramstyle,
                                             time_ge = start_timestamp,
                                             limit = limit)
     def idle_delay(self):
@@ -346,8 +346,8 @@ class PatientStringAttributeQueue(PatientIDExtractorQueue):
 
 class BedTagQueue(ExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
-        return BedTagParser(dialect = db.dialect(),
-                            paramstyle = db.paramstyle(),
+        return BedTagParser(dialect = db.dialect,
+                            paramstyle = db.paramstyle,
                             time_ge = start_timestamp,
                             limit = limit)
     def message_channel(self, message):

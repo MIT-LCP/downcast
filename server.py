@@ -37,6 +37,8 @@ class DWCDB:
         self.username = DWCDB._config[servername]['username']
         self.password = DWCDB._config[servername]['password']
         self.database = DWCDB._config[servername]['database']
+        self.dialect = 'ms'
+        self.paramstyle = pymssql.paramstyle
         self.wave_attr = {}
         self.numeric_attr = {}
         self.enumeration_attr = {}
@@ -49,18 +51,12 @@ class DWCDB:
         return pymssql.connect(self.hostname, self.username,
                                self.password, self.database)
 
-    def dialect(self):
-        return 'ms'
-
-    def paramstyle(self):
-        return pymssql.paramstyle
-
     def get_wave_attr(self, wave_id, sync):
         if wave_id in self.wave_attr:
             return self.wave_attr[wave_id]
 
-        p = WaveAttrParser(dialect = self.dialect(),
-                           paramstyle = self.paramstyle(),
+        p = WaveAttrParser(dialect = self.dialect,
+                           paramstyle = self.paramstyle,
                            limit = 2, wave_id = wave_id)
         try:
             v = self._parse_attr(p, sync)
@@ -76,7 +72,7 @@ class DWCDB:
             return self.numeric_attr[numeric_id]
 
         p = NumericAttrParser(dialect = self.dialect,
-                              paramstyle = self.paramstyle(),
+                              paramstyle = self.paramstyle,
                               limit = 2, numeric_id = numeric_id)
         try:
             v = self._parse_attr(p, sync)
@@ -92,7 +88,7 @@ class DWCDB:
             return self.enumeration_attr[enumeration_id]
 
         p = EnumerationAttrParser(dialect = self.dialect,
-                                  paramstyle = self.paramstyle(),
+                                  paramstyle = self.paramstyle,
                                   limit = 2, enumeration_id = enumeration_id)
         try:
             v = self._parse_attr(p, sync)
