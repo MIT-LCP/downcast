@@ -100,27 +100,26 @@ class DWCDB:
         return v
 
     def _parse_attr(self, parser, sync):
+        if self.attr_db is None:
+            self.attr_db = self.connect()
+
         # FIXME: add asynchronous processing
         try:
-            if self.attr_db is None:
-                self.attr_db = self.connect()
-
-            (query, handler) = next(parser.queries)
-            c = self.attr_db.cursor()
-            c.query(*query)
+            cursor = self.attr_db.cursor()
             results = []
-            row = c.read_row()
-            while row is not None:
-                results.append(handler(row))
-                row = c.read_row()
-            c.close()
-
+            for (query, handler) in parser.queries():
+                cursor.execute(*query)
+                row = cursor.fetchone()
+                while row is not None:
+                    results.append(handler(self, row))
+                    row = cursor.fetchone()
             if len(results) > 1:
                 self._log_warning('multiple results found for %r' % parser)
-
+            elif len(results) == 0:
+                raise UnknownAttrError()
             return results[0]
-        except Exception:
-            raise UnknownAttrError()
+        finally:
+            cursor.close()
 
 class UnknownAttrError(Exception):
     """Internal exception indicating the object does not exist."""
