@@ -71,7 +71,6 @@ class Extractor:
     def _run_queries(self, queue, cursor):
         parser = queue.next_message_parser(self.db)
         for (query, handler) in parser.queries():
-            print(str(query))
             cursor.execute(*query)
             row = cursor.fetchone()
             while row is not None:
