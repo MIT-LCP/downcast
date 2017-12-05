@@ -18,6 +18,8 @@
 
 from collections import OrderedDict
 from datetime import timedelta
+import json
+import os
 
 from dispatcher import Dispatcher
 from parser import (WaveSampleParser, NumericValueParser,
@@ -25,7 +27,7 @@ from parser import (WaveSampleParser, NumericValueParser,
                     PatientMappingParser, PatientBasicInfoParser,
                     PatientDateAttributeParser,
                     PatientStringAttributeParser, BedTagParser)
-from timestamp import very_old_timestamp
+from timestamp import (T, very_old_timestamp)
 
 class Extractor:
     def __init__(self, db, dest_dir):
@@ -40,6 +42,7 @@ class Extractor:
     def add_queue(self, queue):
         self.queues.append(queue)
         self.queue_timestamp[queue] = very_old_timestamp
+        queue.load_state(self.dest_dir)
 
     def add_handler(self, handler):
         self.dispatcher.add_handler(handler)
@@ -49,6 +52,8 @@ class Extractor:
 
     def flush(self):
         self.dispatcher.flush()
+        for queue in self.queues:
+            queue.save_state(self.dest_dir)
 
     def run(self):
         # Find the most out-of-date queue.
@@ -107,13 +112,63 @@ class ExtractorQueue:
         self.queue_name = queue_name
         self.newest_seen_timestamp = start_time
         self.oldest_unacked_timestamp = start_time
-        self.acked_saved = None
+        self.acked_saved = {}
         self.acked_new = OrderedDict()
         self.unacked_new = OrderedDict()
         self.limit_per_batch = 100 # XXX
         self.last_batch_count_at_newest = 0
         self.last_batch_limit = 0
         self.last_batch_count = 0
+
+    def load_state(self, dest_dir):
+        filename = self._state_file_name(dest_dir)
+        try:
+            with open(filename, 'rt', encoding = 'UTF-8') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            return
+        try:
+            ts = T(data['time'])
+            self.newest_seen_timestamp = ts
+            self.oldest_unacked_timestamp = ts
+        except KeyError:
+            return
+        self.acked_saved = {}
+        if data['acked']:
+            for (tsstr, msgstrs) in data['acked'].items():
+                ts = T(tsstr)
+                for msgstr in msgstrs:
+                    if ts not in self.acked_saved:
+                        self.acked_saved[ts] = set()
+                    self.acked_saved[ts].add(msgstrs)
+
+    def save_state(self, dest_dir):
+        data = {}
+        if self.oldest_unacked_timestamp is not None:
+            data['time'] = str(self.oldest_unacked_timestamp)
+            data['acked'] = {}
+            for (ts, msgstrs) in self.acked_saved.items():
+                tsstr = str(ts)
+                for msgstr in msgstrs:
+                    if tsstr not in data['acked']:
+                        data['acked'][tsstr] = []
+                    data['acked'][tsstr].append(msgstr)
+            for (ts, cmsgs) in self.acked_new.items():
+                tsstr = str(ts)
+                for (chn, msg) in cmsgs:
+                    if tsstr not in data['acked']:
+                        data['acked'][tsstr] = []
+                    data['acked'][tsstr].append(repr(msg))
+        filename = self._state_file_name(dest_dir)
+        tmpfname = filename + '.tmp'
+        with open(tmpfname, 'wt', encoding = 'UTF-8') as f:
+            json.dump(data, f)
+            f.flush()
+            os.fdatasync(f.fileno())
+        os.rename(tmpfname, filename)
+
+    def _state_file_name(self, dest_dir):
+        return os.path.join(dest_dir, '%' + self.queue_name + '.queue')
 
     def next_message_parser(self, db):
         # this is a bit of a kludge: if batch limit is too small (more
@@ -184,14 +239,12 @@ class ExtractorQueue:
         # Check if the message was acked in a previous run.
         # Generating and hashing repr(message) may be expensive so
         # don't do it if we don't have to.
-        if self.acked_saved is not None and ts in self.acked_saved:
+        if ts in self.acked_saved:
             mstr = repr(message)
             if mstr in self.acked_saved[ts]:
-                del self.acked_saved[ts][mstr]
+                self.acked_saved[ts].discard(mstr)
                 if len(self.acked_saved[ts]) == 0:
                     del self.acked_saved[ts]
-                    if len(self.acked_saved) == 0:
-                        self.acked_saved = None
                 self.acked_new[ts].add((channel, message))
                 return
 
@@ -242,8 +295,6 @@ class ExtractorQueue:
 
         # Delete any older lists of saved acked messages; warn if
         # those messages failed to reappear
-        if self.acked_saved is None:
-            return
         skipats = set()
         for ats in self.acked_saved:
             if ats < ts:
