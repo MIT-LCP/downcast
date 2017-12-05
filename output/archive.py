@@ -65,12 +65,14 @@ class Archive:
         # concurrently-processed records to determine when
         # 'split_interval' ticks have elapsed.
 
-        if (isinstance(message, WaveSampleMessage)
-                or isinstance(message, NumericValueMessage)):
-            msgtype = type(message)
+        if rec is not None and (isinstance(message, WaveSampleMessage)
+                                or isinstance(message, NumericValueMessage)):
             seqnum = message.sequence_number
-            if (rec is not None and rec.end_time[msgtype] is not None
-                    and seqnum - rec.end_time[msgtype] > self.split_interval):
+            if isinstance(message, WaveSampleMessage):
+                end = rec.get_int_property(['waves_end'])
+            else:
+                end = rec.get_int_property(['numerics_end'])
+            if end is not None and seqnum - end > self.split_interval:
                 self.records[servername, record_id] = None
                 rec.finalize()
                 rec = None
@@ -109,37 +111,24 @@ class ArchiveRecord:
         self.record_id = record_id
         self.datestamp = datestamp
         self.files = {}
-        self.start_time = None
-        self.end_time = {}
         if create:
             os.makedirs(self.path, exist_ok = True)
 
-        timeinfo = self.read_state_file('_time')
-        try:
-            self.start_time = int(timeinfo['start'])
-        except (KeyError, TypeError):
-            self.start_time = None
-        try:
-            self.end_time[WaveSampleMessage] = int(timeinfo['waves_end'])
-        except (KeyError, TypeError):
-            self.end_time[WaveSampleMessage] = None
-        try:
-            self.end_time[NumericValueMessage] = int(timeinfo['numerics_end'])
-        except (KeyError, TypeError):
-            self.end_time[NumericValueMessage] = None
+        self.properties = self._read_state_file('_properties')
         self.modified = False
 
     def add_event(self, message):
         # FIXME: periodically record time stamps in a log file
-        if self.start_time is None:
-            self.start_time = message.sequence_number
-        if (isinstance(message, WaveSampleMessage)
-                or isinstance(message, NumericValueMessage)):
-            self.end_time[type(message)] = message.sequence_number
-            self.modified = True
+        st = self.get_int_property(['start_time'])
+        if st is None:
+            self.set_property(['start_time'], message.sequence_number)
+        if isinstance(message, WaveSampleMessage):
+            self.set_property(['waves_end'], message.sequence_number)
+        if isinstance(message, NumericValueMessage):
+            self.set_property(['numerics_end'], message.sequence_number)
 
     def seqnum0(self):
-        return self.start_time
+        return self.get_int_property(['start_time'])
 
     def finalize(self):
         # FIXME: lots of stuff to do here...
@@ -151,10 +140,7 @@ class ArchiveRecord:
 
     def flush(self):
         if self.modified:
-            timeinfo = { 'start':        self.start_time,
-                         'waves_end':    self.end_time[WaveSampleMessage],
-                         'numerics_end': self.end_time[NumericValueMessage] }
-            self.write_state_file('_time', timeinfo)
+            self._write_state_file('_properties', self.properties)
             self.dir_sync()
 
     def dir_sync(self):
@@ -164,7 +150,7 @@ class ArchiveRecord:
         finally:
             os.close(d)
 
-    def read_state_file(self, name):
+    def _read_state_file(self, name):
         fname = os.path.join(self.path, name)
         try:
             with open(fname, 'rt', encoding = 'UTF-8') as f:
@@ -172,7 +158,7 @@ class ArchiveRecord:
         except (FileNotFoundError, UnicodeError, json.JSONDecodeError):
             return None
 
-    def write_state_file(self, name, content):
+    def _write_state_file(self, name, content):
         fname = os.path.join(self.path, name)
         tmpfname = os.path.join(self.path, '_' + name + '.tmp')
         with open(tmpfname, 'wt', encoding = 'UTF-8') as f:
@@ -180,6 +166,35 @@ class ArchiveRecord:
             f.flush()
             os.fdatasync(f.fileno())
         os.rename(tmpfname, fname)
+
+    def get_property(self, path):
+        v = self.properties
+        for k in path:
+            v = v[k]
+        return v
+
+    def set_property(self, path, value):
+        if not isinstance(self.properties, dict):
+            self.properties = {}
+        v = self.properties
+        for k in path[:-1]:
+            if k not in v or not isinstance(v[k], dict):
+                v[k] = {}
+            v = v[k]
+        v[path[-1]] = value
+        self.modified = True
+
+    def get_int_property(self, path, default = None):
+        try:
+            return int(self.get_property(path))
+        except (KeyError, TypeError):
+            return default
+
+    def get_str_property(self, path, default = None):
+        try:
+            return str(self.get_property(path))
+        except (KeyError, TypeError):
+            return default
 
     def open_log_file(self, name):
         if name not in self.files:
