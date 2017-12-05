@@ -259,9 +259,9 @@ class AlertParser(MappingIDMessageParser):
             kind            = cols('Kind',           _integer),
             is_silenced     = cols('IsSilenced',     _boolean),
             subtype_id      = cols('SubtypeId',      _integer),
-            announce_time   = cols('AnnounceTime',   _timestamp, True),
-            onset_time      = cols('OnsetTime',      _timestamp, True),
-            end_time        = cols('EndTime',        _timestamp, True),
+            announce_time   = cols('AnnounceTime',   _timestamp),
+            onset_time      = cols('OnsetTime',      _timestamp),
+            end_time        = cols('EndTime',        _timestamp),
             mapping_id      = cols('MappingId',      _uuid, True))
 
 class NumericValueParser(MappingIDMessageParser):
