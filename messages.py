@@ -111,9 +111,12 @@ AlertMessage = namedtuple('AlertMessage', (
     'announce_time',
 
     # Time that the triggering condition begins? (probably from monitor)
+    # If the time is unknown, this will be something absurd like 0001-01-01.
     'onset_time',
 
     # Time that ??? ends (probably from monitor)
+    # If the alarm has not yet ended, this will be something absurd
+    # like 0001-01-01.
     'end_time',
 
     # Should correspond to 'mapping_id' in PatientMappingMessage.
