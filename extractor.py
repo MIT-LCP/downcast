@@ -140,7 +140,7 @@ class ExtractorQueue:
                 for msgstr in msgstrs:
                     if ts not in self.acked_saved:
                         self.acked_saved[ts] = set()
-                    self.acked_saved[ts].add(msgstrs)
+                    self.acked_saved[ts].add(msgstr)
 
     def save_state(self, dest_dir):
         data = {}
