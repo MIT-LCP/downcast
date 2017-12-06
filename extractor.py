@@ -20,6 +20,7 @@ from collections import OrderedDict
 from datetime import timedelta
 import json
 import os
+import hashlib
 
 from dispatcher import Dispatcher
 from parser import (WaveSampleParser, NumericValueParser,
@@ -158,7 +159,7 @@ class ExtractorQueue:
                 for (chn, msg) in cmsgs:
                     if tsstr not in data['acked']:
                         data['acked'][tsstr] = []
-                    data['acked'][tsstr].append(repr(msg))
+                    data['acked'][tsstr].append(self._message_hash(msg))
         filename = self._state_file_name(dest_dir)
         tmpfname = filename + '.tmp'
         with open(tmpfname, 'wt', encoding = 'UTF-8') as f:
@@ -169,6 +170,11 @@ class ExtractorQueue:
 
     def _state_file_name(self, dest_dir):
         return os.path.join(dest_dir, '%' + self.queue_name + '.queue')
+
+    def _message_hash(self, msg):
+        m = hashlib.sha256()
+        m.update(repr(msg).encode('UTF-8'))
+        return m.hexdigest()
 
     def next_message_parser(self, db):
         # this is a bit of a kludge: if batch limit is too small (more
@@ -237,10 +243,10 @@ class ExtractorQueue:
             return
 
         # Check if the message was acked in a previous run.
-        # Generating and hashing repr(message) may be expensive so
-        # don't do it if we don't have to.
+        # Generating _message_hash(message) may be expensive so don't
+        # do it if we don't have to.
         if ts in self.acked_saved:
-            mstr = repr(message)
+            mstr = self._message_hash(message)
             if mstr in self.acked_saved[ts]:
                 self.acked_saved[ts].discard(mstr)
                 if len(self.acked_saved[ts]) == 0:
