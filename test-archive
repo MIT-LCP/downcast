@@ -9,18 +9,26 @@ from timestamp import T
 from output.archive import Archive
 from output.numerics import NumericValueHandler
 
-shutil.rmtree('/tmp/downcast-extractor-test', ignore_errors = True)
-
 DWCDB.load_config('server.conf')
-db = DWCDB('demo')
-ex = Extractor(db, '/tmp/downcast-extractor-test')
-arx = Archive('/tmp/downcast-extractor-test')
-nh = NumericValueHandler(arx)
-ex.add_handler(nh)
 
-st = T('2016-01-28 14:00:00.000 -05:00')
-ex.add_queue(NumericValueQueue('numerics', start_time = st))
+def test(dest_dir, iterations):
+    db = DWCDB('demo')
+    ex = Extractor(db, dest_dir)
+    arx = Archive(dest_dir)
+    nh = NumericValueHandler(arx)
+    ex.add_handler(nh)
 
-for _ in range(100):
-    ex.run()
-ex.flush()
+    st = T('2016-01-28 14:00:00.000 -05:00')
+    ex.add_queue(NumericValueQueue('numerics', start_time = st))
+    for _ in range(iterations):
+        ex.run()
+    ex.flush()
+
+shutil.rmtree('/tmp/downcast-extractor-test', ignore_errors = True)
+test('/tmp/downcast-extractor-test', 5)
+test('/tmp/downcast-extractor-test', 5)
+test('/tmp/downcast-extractor-test', 5)
+test('/tmp/downcast-extractor-test', 5)
+
+shutil.rmtree('/tmp/downcast-extractor-test2', ignore_errors = True)
+test('/tmp/downcast-extractor-test2', 20)
