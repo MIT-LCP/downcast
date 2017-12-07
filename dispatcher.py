@@ -43,13 +43,14 @@ class Dispatcher:
     handler explictly accepts or defers them.
     """
 
-    def __init__(self):
+    def __init__(self, fatal_exceptions = False):
         self.handlers = []
         self.channels = OrderedDict()
         self.all_messages = OrderedDict()
         self.message_counter = 0
         self.dead_letter_handlers = []
         self.active_handlers = set()
+        self.fatal_exceptions = fatal_exceptions
 
     def add_handler(self, handler):
         """Add a message handler."""
@@ -322,9 +323,6 @@ class Dispatcher:
     # message, so all exceptions are fatal.  Handlers should not do
     # anything in 'flush' except flushing buffers.
 
-    # FIXME: have the option to treat all exceptions as fatal, for
-    # debugging.
-
     def _handler_send_message(self, handler, channel, msg, ttl):
         try:
             handler.send_message(channel, msg, self, ttl)
@@ -353,6 +351,8 @@ class Dispatcher:
             self._log_exception_once(source, channel, msg, 'nack_message', e)
 
     def _log_exception_once(self, handler, channel, msg, text, exc):
+        if self.fatal_exceptions:
+            raise exc
         if self._message_pending(channel, msg):
             minfo = self.channels[channel][msg]
             if handler not in minfo['crashed_handlers']:

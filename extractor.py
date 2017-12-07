@@ -31,11 +31,11 @@ from parser import (WaveSampleParser, NumericValueParser,
 from timestamp import (T, very_old_timestamp)
 
 class Extractor:
-    def __init__(self, db, dest_dir):
+    def __init__(self, db, dest_dir, fatal_exceptions = False):
         self.db = db
         self.dest_dir = dest_dir
         self.queues = []
-        self.dispatcher = Dispatcher()
+        self.dispatcher = Dispatcher(fatal_exceptions = fatal_exceptions)
         self.conn = db.connect()
         self.current_timestamp = very_old_timestamp
         self.queue_timestamp = OrderedDict()

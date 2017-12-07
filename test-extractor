@@ -13,7 +13,7 @@ class TestHandler():
 
 DWCDB.load_config('server.conf')
 db = DWCDB('demo')
-ex = Extractor(db, '/tmp/downcast-extractor-test')
+ex = Extractor(db, '/tmp/downcast-extractor-test', fatal_exceptions = True)
 
 ex.add_handler(TestHandler())
 

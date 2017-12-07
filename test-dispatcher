@@ -40,7 +40,7 @@ class TestDeadLetterHandler:
 
 class TestGenerator:
     def __init__(self):
-        self.dispatcher = Dispatcher()
+        self.dispatcher = Dispatcher(fatal_exceptions = True)
         self.dead_messages = WeakSet()
 
     def gen_message(self, channel, seqnum, msgstr):
