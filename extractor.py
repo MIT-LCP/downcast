@@ -43,7 +43,8 @@ class Extractor:
     def add_queue(self, queue):
         self.queues.append(queue)
         self.queue_timestamp[queue] = very_old_timestamp
-        queue.load_state(self.dest_dir)
+        if self.dest_dir is not None:
+            queue.load_state(self.dest_dir)
 
     def add_handler(self, handler):
         self.dispatcher.add_handler(handler)
@@ -53,8 +54,9 @@ class Extractor:
 
     def flush(self):
         self.dispatcher.flush()
-        for queue in self.queues:
-            queue.save_state(self.dest_dir)
+        if self.dest_dir is not None:
+            for queue in self.queues:
+                queue.save_state(self.dest_dir)
 
     def run(self):
         # Find the most out-of-date queue.
