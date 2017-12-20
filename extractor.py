@@ -80,7 +80,7 @@ class Extractor:
 
     def _run_queries(self, queue, cursor):
         parser = queue.next_message_parser(self.db)
-        for msg in parser.messages(self.db, cursor):
+        for msg in self.db.get_messages(parser, cursor = cursor):
             ts = queue.message_timestamp(msg)
 
             # FIXME: should disregard timestamps that are

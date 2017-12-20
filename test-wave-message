@@ -1,11 +1,11 @@
 #!/usr/bin/python3
 
-from configparser import ConfigParser
 from collections import OrderedDict
 import pymssql
 import sys
 
 from dispatcher import Dispatcher
+from server import DWCDB
 from parser import WaveSampleParser
 from messages import WaveSampleMessage
 
@@ -50,17 +50,13 @@ class TestDeadLetterHandler:
 
 class TestGenerator:
     def __init__(self):
-        cfg = ConfigParser()
-        cfg.read('server.conf')
-        s = cfg['demo']
-        self.db = pymssql.connect(s['hostname'], s['username'], s['password'], s['database'])
+        DWCDB.load_config('server.conf')
+        self.db = DWCDB('demo')
         self.dispatcher = Dispatcher()
 
     def parse(self, parser):
-        cursor = self.db.cursor()
-        for msg in parser.messages('dummy', cursor):
+        for msg in self.db.get_messages(parser):
             self.dispatcher.send_message(msg.mapping_id, msg, self, 100)
-        cursor.close()
 
     def ack_message(self, chn, msg, recipient):
         return

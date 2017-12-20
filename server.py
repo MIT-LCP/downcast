@@ -51,6 +51,31 @@ class DWCDB:
         return pymssql.connect(self.hostname, self.username,
                                self.password, self.database)
 
+    def get_messages(self, parser, connection = None, cursor = None):
+        tmpconn = None
+        tmpcur = None
+        try:
+            if cursor is not None:
+                cur = cursor
+            elif connection is not None:
+                cur = tmpcur = connection.cursor()
+            else:
+                tmpconn = self.connect()
+                cur = tmpcur = tmpconn.cursor()
+            for (query, handler) in parser.queries():
+                cur.execute(*query)
+                row = cur.fetchone()
+                while row is not None:
+                    msg = handler(self, row)
+                    if msg is not None:
+                        yield msg
+                    row = cur.fetchone()
+        finally:
+            if tmpcur is not None:
+                tmpcur.close()
+            if tmpconn is not None:
+                tmpconn.close()
+
     def get_wave_attr(self, wave_id, sync):
         if wave_id in self.wave_attr:
             return self.wave_attr[wave_id]
@@ -104,18 +129,14 @@ class DWCDB:
             self.attr_db = self.connect()
 
         # FIXME: add asynchronous processing
-        try:
-            cursor = self.attr_db.cursor()
-            results = []
-            for msg in parser.messages(self, cursor):
-                results.append(msg)
-            if len(results) > 1:
-                self._log_warning('multiple results found for %r' % parser)
-            elif len(results) == 0:
-                raise UnknownAttrError()
-            return results[0]
-        finally:
-            cursor.close()
+        results = []
+        for msg in self.get_messages(parser, connection = self.attr_db):
+            results.append(msg)
+        if len(results) > 1:
+            self._log_warning('multiple results found for %r' % parser)
+        elif len(results) == 0:
+            raise UnknownAttrError()
+        return results[0]
 
 class UnknownAttrError(Exception):
     """Internal exception indicating the object does not exist."""
