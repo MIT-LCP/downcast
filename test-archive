@@ -19,7 +19,8 @@ def test(dest_dir, iterations):
     ex.add_handler(nh)
 
     st = T('2016-01-28 14:00:00.000 -05:00')
-    ex.add_queue(NumericValueQueue('numerics', start_time = st))
+    ex.add_queue(NumericValueQueue('numerics', start_time = st,
+                                   messages_per_batch = 100))
     for _ in range(iterations):
         ex.run()
     ex.flush()

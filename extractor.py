@@ -113,14 +113,15 @@ class Extractor:
                                            + queue.idle_delay())
 
 class ExtractorQueue:
-    def __init__(self, queue_name, start_time = None):
+    def __init__(self, queue_name, start_time = None,
+                 messages_per_batch = 1000):
         self.queue_name = queue_name
         self.newest_seen_timestamp = start_time
         self.oldest_unacked_timestamp = start_time
         self.acked_saved = {}
         self.acked_new = OrderedDict()
         self.unacked_new = OrderedDict()
-        self.limit_per_batch = 1000 # XXX
+        self.limit_per_batch = messages_per_batch
         self.last_batch_count_at_newest = 0
         self.last_batch_limit = 0
         self.last_batch_count = 0
