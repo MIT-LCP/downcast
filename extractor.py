@@ -120,7 +120,7 @@ class ExtractorQueue:
         self.acked_saved = {}
         self.acked_new = OrderedDict()
         self.unacked_new = OrderedDict()
-        self.limit_per_batch = 100 # XXX
+        self.limit_per_batch = 1000 # XXX
         self.last_batch_count_at_newest = 0
         self.last_batch_limit = 0
         self.last_batch_count = 0
