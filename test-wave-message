@@ -57,16 +57,10 @@ class TestGenerator:
         self.dispatcher = Dispatcher()
 
     def parse(self, parser):
-        for (query, handler) in parser.queries():
-            cursor = self.db.cursor()
-            cursor.execute(*query)
-            row = cursor.fetchone()
-            while row is not None:
-                msg = handler('dummy', row)
-                if msg is not None:
-                    self.dispatcher.send_message(msg.mapping_id, msg, self, 100)
-                row = cursor.fetchone()
-            cursor.close()
+        cursor = self.db.cursor()
+        for msg in parser.messages('dummy', cursor):
+            self.dispatcher.send_message(msg.mapping_id, msg, self, 100)
+        cursor.close()
 
     def ack_message(self, chn, msg, recipient):
         return
