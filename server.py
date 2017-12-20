@@ -107,12 +107,8 @@ class DWCDB:
         try:
             cursor = self.attr_db.cursor()
             results = []
-            for (query, handler) in parser.queries():
-                cursor.execute(*query)
-                row = cursor.fetchone()
-                while row is not None:
-                    results.append(handler(self, row))
-                    row = cursor.fetchone()
+            for msg in parser.messages(self, cursor):
+                results.append(msg)
             if len(results) > 1:
                 self._log_warning('multiple results found for %r' % parser)
             elif len(results) == 0:
