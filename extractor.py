@@ -39,6 +39,8 @@ class Extractor:
         self.conn = db.connect()
         self.current_timestamp = very_old_timestamp
         self.queue_timestamp = OrderedDict()
+        if dest_dir is not None:
+            os.makedirs(dest_dir, exist_ok = True)
 
     def add_queue(self, queue):
         self.queues.append(queue)
