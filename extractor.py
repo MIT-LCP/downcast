@@ -80,30 +80,24 @@ class Extractor:
 
     def _run_queries(self, queue, cursor):
         parser = queue.next_message_parser(self.db)
-        for (query, handler) in parser.queries():
-            cursor.execute(*query)
-            row = cursor.fetchone()
-            while row is not None:
-                msg = handler(self.db, row)
-                if msg is not None:
-                    ts = queue.message_timestamp(msg)
+        for msg in parser.messages(self.db, cursor):
+            ts = queue.message_timestamp(msg)
 
-                    # FIXME: should disregard timestamps that are
-                    # completely absurd (but maybe those should be
-                    # thrown away at a lower level.)
+            # FIXME: should disregard timestamps that are
+            # completely absurd (but maybe those should be
+            # thrown away at a lower level.)
 
-                    # current_timestamp = maximum timestamp of any
-                    # message we've seen so far
-                    if ts > self.current_timestamp:
-                        self.current_timestamp = ts
+            # current_timestamp = maximum timestamp of any
+            # message we've seen so far
+            if ts > self.current_timestamp:
+                self.current_timestamp = ts
 
-                    # queue_timestamp = maximum timestamp of any
-                    # message we've seen in this queue
-                    if ts > self.queue_timestamp[queue]:
-                        self.queue_timestamp[queue] = ts
+            # queue_timestamp = maximum timestamp of any
+            # message we've seen in this queue
+            if ts > self.queue_timestamp[queue]:
+                self.queue_timestamp[queue] = ts
 
-                    queue.push_message(msg, self.dispatcher)
-                row = cursor.fetchone()
+            queue.push_message(msg, self.dispatcher)
 
         # If this queue has reached the present time, put it to
         # sleep for some minimum time period before hitting it
