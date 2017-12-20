@@ -57,6 +57,26 @@ class MessageParser:
             qstr += (' LIMIT %d' % limit)
         return (qstr, tuple(params))
 
+    def messages(self, db, cursor = None):
+        try:
+            if cursor is None:
+                conn = db.connect()
+                cur = conn.cursor()
+            else:
+                conn = None
+                cur = cursor
+            for (query, handler) in self.queries():
+                cur.execute(*query)
+                row = cur.fetchone()
+                while row is not None:
+                    msg = handler(db, row)
+                    if msg is not None:
+                        yield msg
+                    row = cur.fetchone()
+        finally:
+            if conn is not None:
+                conn.close()
+
 class SimpleMessageParser(MessageParser):
     """Abstract class for parsing single-row messages.
 
