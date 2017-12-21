@@ -118,8 +118,9 @@ class TimestampMessageParser(SimpleMessageParser):
     columns.
     """
     def __init__(self, time = None, time_ge = None, time_le = None,
-                 time_gt = None, time_lt = None, **kwargs):
+                 time_gt = None, time_lt = None, reverse = False, **kwargs):
         SimpleMessageParser.__init__(self, **kwargs)
+        self.reverse = reverse
 
         if time is not None:
             self.add_constraint('TimeStamp = ', _to_timestamp(time))
@@ -131,6 +132,12 @@ class TimestampMessageParser(SimpleMessageParser):
             self.add_constraint('TimeStamp > ', _to_timestamp(time_gt))
         if time_lt is not None:
             self.add_constraint('TimeStamp < ', _to_timestamp(time_lt))
+
+    def order(self):
+        if self.reverse:
+            return "TimeStamp DESC"
+        else:
+            return "TimeStamp"
 
 class MappingIDMessageParser(TimestampMessageParser):
     """Abstract class for parsing record data messages.
@@ -226,8 +233,6 @@ class WaveSampleParser(MappingIDMessageParser):
     """Parser for wave sample messages."""
     def table(self):
         return '_Export.WaveSample_'
-    def order(self):
-        return 'TimeStamp'
     def parse_columns(self, origin, cols):
         return WaveSampleMessage(
             origin              = origin,
@@ -244,8 +249,6 @@ class AlertParser(MappingIDMessageParser):
     """Parser for alert messages."""
     def table(self):
         return '_Export.Alert_'
-    def order(self):
-        return 'TimeStamp'
     def parse_columns(self, origin, cols):
         return AlertMessage(
             origin          = origin,
@@ -268,8 +271,6 @@ class NumericValueParser(MappingIDMessageParser):
     """Parser for numeric value messages."""
     def table(self):
         return '_Export.NumericValue_'
-    def order(self):
-        return 'TimeStamp'
     def parse_columns(self, origin, cols):
         return NumericValueMessage(
             origin            = origin,
@@ -285,8 +286,6 @@ class EnumerationValueParser(MappingIDMessageParser):
     """Parser for enumeration value messages."""
     def table(self):
         return '_Export.EnumerationValue_'
-    def order(self):
-        return 'TimeStamp'
     def parse_columns(self, origin, cols):
         return EnumerationValueMessage(
             origin            = origin,
@@ -402,8 +401,6 @@ class BedTagParser(TimestampMessageParser):
 
     def table(self):
         return '_Export.BedTag_'
-    def order(self):
-        return 'Timestamp'
     def parse_columns(self, origin, cols):
         return BedTagMessage(
             origin    = origin,
@@ -422,8 +419,6 @@ class PatientDateAttributeParser(TimestampMessageParser):
 
     def table(self):
         return '_Export.PatientDateAttribute_'
-    def order(self):
-        return 'Timestamp'
     def parse_columns(self, origin, cols):
         return PatientDateAttributeMessage(
             origin     = origin,
@@ -443,8 +438,6 @@ class PatientStringAttributeParser(TimestampMessageParser):
 
     def table(self):
         return '_Export.PatientStringAttribute_'
-    def order(self):
-        return 'Timestamp'
     def parse_columns(self, origin, cols):
         return PatientStringAttributeMessage(
             origin     = origin,
@@ -462,8 +455,6 @@ class PatientBasicInfoParser(TimestampMessageParser):
 
     def table(self):
         return '_Export.Patient_'
-    def order(self):
-        return 'Timestamp'
     def parse_columns(self, origin, cols):
         return PatientBasicInfoMessage(
             origin               = origin,
@@ -497,8 +488,6 @@ class PatientMappingParser(TimestampMessageParser):
 
     def table(self):
         return '_Export.PatientMapping_'
-    def order(self):
-        return 'Timestamp'
     def parse_columns(self, origin, cols):
         return PatientMappingMessage(
             origin            = origin,
