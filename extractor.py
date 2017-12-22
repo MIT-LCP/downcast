@@ -323,7 +323,7 @@ class MappingIDExtractorQueue(ExtractorQueue):
     def message_timestamp(self, message):
         return message.timestamp
     def message_ttl(self, message):
-        return 1000             # XXX
+        return self.limit_per_batch * 20
 
 class PatientIDExtractorQueue(ExtractorQueue):
     def __init__(self, queue_name, patient_id = None, **kwargs):
@@ -334,7 +334,7 @@ class PatientIDExtractorQueue(ExtractorQueue):
     def message_timestamp(self, message):
         return message.timestamp
     def message_ttl(self, message):
-        return 1000             # XXX
+        return self.limit_per_batch * 20
 
 class WaveSampleQueue(MappingIDExtractorQueue):
     def message_parser(self, db, start_timestamp, limit):
