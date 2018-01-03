@@ -180,7 +180,7 @@ class ArchiveRecord:
         try:
             with open(fname, 'rt', encoding = 'UTF-8') as f:
                 return json.load(f)
-        except (FileNotFoundError, UnicodeError, json.JSONDecodeError):
+        except (FileNotFoundError, UnicodeError, ValueError):
             return None
 
     def _write_state_file(self, name, content):
