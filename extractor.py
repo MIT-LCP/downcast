@@ -201,6 +201,10 @@ class ExtractorQueue:
         self.last_batch_count_at_newest = 0
         return self.message_parser(db, self.newest_seen_timestamp, n)
 
+    def final_message_parser(self, db):
+        return self.message_parser(db, self.newest_seen_timestamp, 1,
+                                   reverse = True)
+
     def reached_present(self):
         # this is nasty.  we want to answer the question "did the
         # previous query end because we reached the limit of available
@@ -348,90 +352,99 @@ class PatientIDExtractorQueue(ExtractorQueue):
         return self.limit_per_batch * 20
 
 class WaveSampleQueue(MappingIDExtractorQueue):
-    def message_parser(self, db, start_timestamp, limit):
+    def message_parser(self, db, start_timestamp, limit, reverse = False):
         return WaveSampleParser(dialect = db.dialect,
                                 paramstyle = db.paramstyle,
                                 mapping_id = self.mapping_id,
                                 time_ge = start_timestamp,
+                                reverse = reverse,
                                 limit = limit)
     def idle_delay(self):
         return timedelta(milliseconds = 500)
 
 class NumericValueQueue(MappingIDExtractorQueue):
-    def message_parser(self, db, start_timestamp, limit):
+    def message_parser(self, db, start_timestamp, limit, reverse = False):
         return NumericValueParser(dialect = db.dialect,
                                   paramstyle = db.paramstyle,
                                   mapping_id = self.mapping_id,
                                   time_ge = start_timestamp,
+                                  reverse = reverse,
                                   limit = limit)
     def idle_delay(self):
         return timedelta(seconds = 1)
 
 class EnumerationValueQueue(MappingIDExtractorQueue):
-    def message_parser(self, db, start_timestamp, limit):
+    def message_parser(self, db, start_timestamp, limit, reverse = False):
         return EnumerationValueParser(dialect = db.dialect,
                                       paramstyle = db.paramstyle,
                                       mapping_id = self.mapping_id,
                                       time_ge = start_timestamp,
+                                      reverse = reverse,
                                       limit = limit)
     def idle_delay(self):
         return timedelta(milliseconds = 500)
 
 class AlertQueue(MappingIDExtractorQueue):
-    def message_parser(self, db, start_timestamp, limit):
+    def message_parser(self, db, start_timestamp, limit, reverse = False):
         return AlertParser(dialect = db.dialect,
                            paramstyle = db.paramstyle,
                            mapping_id = self.mapping_id,
                            time_ge = start_timestamp,
+                           reverse = reverse,
                            limit = limit)
     def idle_delay(self):
         return timedelta(seconds = 1)
 
 class PatientMappingQueue(MappingIDExtractorQueue):
-    def message_parser(self, db, start_timestamp, limit):
+    def message_parser(self, db, start_timestamp, limit, reverse = False):
         return PatientMappingParser(dialect = db.dialect,
                                     paramstyle = db.paramstyle,
                                     mapping_id = self.mapping_id,
                                     time_ge = start_timestamp,
+                                    reverse = reverse,
                                     limit = limit)
     def idle_delay(self):
         return timedelta(minutes = 5)
 
 class PatientBasicInfoQueue(PatientIDExtractorQueue):
-    def message_parser(self, db, start_timestamp, limit):
+    def message_parser(self, db, start_timestamp, limit, reverse = False):
         return PatientBasicInfoParser(dialect = db.dialect,
                                       paramstyle = db.paramstyle,
                                       patient_id = self.patient_id,
                                       time_ge = start_timestamp,
+                                      reverse = reverse,
                                       limit = limit)
     def idle_delay(self):
         return timedelta(minutes = 31)
 
 class PatientDateAttributeQueue(PatientIDExtractorQueue):
-    def message_parser(self, db, start_timestamp, limit):
+    def message_parser(self, db, start_timestamp, limit, reverse = False):
         return PatientDateAttributeParser(dialect = db.dialect,
                                           paramstyle = db.paramstyle,
                                           patient_id = self.patient_id,
                                           time_ge = start_timestamp,
+                                          reverse = reverse,
                                           limit = limit)
     def idle_delay(self):
         return timedelta(minutes = 32)
 
 class PatientStringAttributeQueue(PatientIDExtractorQueue):
-    def message_parser(self, db, start_timestamp, limit):
+    def message_parser(self, db, start_timestamp, limit, reverse = False):
         return PatientStringAttributeParser(dialect = db.dialect,
                                             paramstyle = db.paramstyle,
                                             patient_id = self.patient_id,
                                             time_ge = start_timestamp,
+                                            reverse = reverse,
                                             limit = limit)
     def idle_delay(self):
         return timedelta(minutes = 33)
 
 class BedTagQueue(ExtractorQueue):
-    def message_parser(self, db, start_timestamp, limit):
+    def message_parser(self, db, start_timestamp, limit, reverse = False):
         return BedTagParser(dialect = db.dialect,
                             paramstyle = db.paramstyle,
                             time_ge = start_timestamp,
+                            reverse = reverse,
                             limit = limit)
     def message_channel(self, message):
         return None
