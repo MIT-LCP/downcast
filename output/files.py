@@ -168,3 +168,6 @@ class ArchiveBinaryFile:
         os.close(self.fd)
         self.fd = None
         self.fsync_before_close = fsync
+
+    def __del__(self):
+        self.close(fsync = False)
