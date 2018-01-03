@@ -65,13 +65,19 @@ class Archive:
 
     def get_record(self, message, sync):
         servername = message.origin.servername
-        patient_id = message.origin.get_patient_id(message.mapping_id, sync)
-        if patient_id is not None:
-            record_id = str(patient_id)
-        elif sync:
-            record_id = str(message.mapping_id)
+
+        mapping_id = getattr(message, 'mapping_id', None)
+        if mapping_id is not None:
+            patient_id = message.origin.get_patient_id(mapping_id, sync)
+            if patient_id is not None:
+                record_id = str(patient_id)
+            elif sync:
+                record_id = str(mapping_id)
+            else:
+                return None
         else:
-            return None
+            patient_id = message.patient_id
+            record_id = str(patient_id)
 
         rec = self.records.get((servername, record_id))
 
@@ -145,12 +151,13 @@ class ArchiveRecord:
     def add_event(self, message):
         # FIXME: periodically record time stamps in a log file
         st = self.get_int_property(['start_time'])
-        if st is None:
-            self.set_property(['start_time'], message.sequence_number)
+        t = getattr(message, 'sequence_number', None)
+        if st is None and t is not None:
+            self.set_property(['start_time'], t)
         if isinstance(message, WaveSampleMessage):
-            self.set_property(['waves_end'], message.sequence_number)
+            self.set_property(['waves_end'], t)
         if isinstance(message, NumericValueMessage):
-            self.set_property(['numerics_end'], message.sequence_number)
+            self.set_property(['numerics_end'], t)
 
     def seqnum0(self):
         return self.get_int_property(['start_time'])
