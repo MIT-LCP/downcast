@@ -88,13 +88,19 @@ class Dispatcher:
         # Submit the new message to every handler.
         for h in self.handlers:
             self._handler_send_message(h, channel, msg, ttl)
+        self._mark_submitted(channel, msg)
 
         # Check whether any handlers acked or nacked the message.
         if self._message_pending(channel, msg):
-            if self._message_n_handlers(channel, msg) == 0:
+            if not self._message_claimed(channel, msg):
                 # No handlers were interested.  Drop the message
                 # immediately and send it to the dead letter file.
                 self._expire_message(channel, msg)
+            elif self._message_n_handlers(channel, msg) == 0:
+                # All interested handlers acked the message.  Ack it
+                # upstream.
+                self._delete_message(channel, msg)
+                self._source_ack_message(source, channel, msg)
             else:
                 # One or more handlers nacked the message.  Nack it
                 # upstream.
@@ -161,7 +167,8 @@ class Dispatcher:
             self._message_del_handler(channel, msg, handler)
 
             # If all handlers have now acked the message, ack it upstream.
-            if self._message_n_handlers(channel, msg) == 0:
+            if (self._message_submitted(channel, msg)
+                    and self._message_n_handlers(channel, msg) == 0):
                 s = self._message_source(channel, msg)
                 self._delete_message(channel, msg)
                 self._source_ack_message(s, channel, msg)
@@ -205,7 +212,13 @@ class Dispatcher:
             'handlers': set(),
 
             # Set of handlers that have thrown an error on this message
-            'crashed_handlers': set()
+            'crashed_handlers': set(),
+
+            # Set when all handlers have seen the message
+            'submitted': False,
+
+            # Set when any handler has acked/nacked the message
+            'claimed': False
         }
         self.all_messages[channel, msg] = 1
         self.message_counter += 1
@@ -235,15 +248,33 @@ class Dispatcher:
 
     def _message_add_handler(self, channel, msg, handler):
         if self._message_pending(channel, msg):
+            self.channels[channel][msg]['claimed'] = True
             if handler not in self.channels[channel][msg]['handlers']:
                 self.channels[channel][msg]['handlers'].add(handler)
                 self.active_handlers.add(handler)
 
     def _message_del_handler(self, channel, msg, handler):
         if self._message_pending(channel, msg):
+            self.channels[channel][msg]['claimed'] = True
             if handler in self.channels[channel][msg]['handlers']:
                 self.channels[channel][msg]['handlers'].discard(handler)
                 self.active_handlers.add(handler)
+
+    def _message_claimed(self, channel, msg):
+        if self._message_pending(channel, msg):
+            return self.channels[channel][msg]['claimed']
+        else:
+            return False
+
+    def _message_submitted(self, channel, msg):
+        if self._message_pending(channel, msg):
+            return self.channels[channel][msg]['submitted']
+        else:
+            return False
+
+    def _mark_submitted(self, channel, msg):
+        if self._message_pending(channel, msg):
+            self.channels[channel][msg]['submitted'] = True
 
     def _message_ttl(self, channel, msg):
         if self._message_pending(channel, msg):
