@@ -65,7 +65,12 @@ class Archive:
 
     def get_record(self, message):
         servername = message.origin.servername
-        record_id = str(message.mapping_id)
+        patient_id = message.origin.get_patient_id(message.mapping_id, True)
+        if patient_id is not None:
+            record_id = str(patient_id)
+        else:
+            record_id = str(message.mapping_id)
+
         rec = self.records.get((servername, record_id))
 
         # Check if record needs to be split (interval between
