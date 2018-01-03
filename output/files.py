@@ -21,6 +21,16 @@ import errno
 import mmap
 
 class ArchiveLogFile:
+    """Append-only text log output file.
+
+    Messages can only be appended to the end of the log file.
+    Messages must be strings and are always encoded as UTF-8.
+
+    When the file is opened, if it ends with an incomplete message
+    (i.e., the program writing the file crashed or ran out of space),
+    a special marker is appended to indicate that the line is invalid.
+    """
+
     def __init__(self, filename):
         # Open file
         self.fp = open(filename, 'a+b')
@@ -39,18 +49,34 @@ class ArchiveLogFile:
             self.fp.write(b'\030\r####\030\n')
 
     def append(self, msg):
+        """Write a message to the end of the file.
+
+        A line feed is appended automatically.
+        """
         self.fp.write(msg.encode('UTF-8'))
         self.fp.write(b'\n')
 
     def flush(self):
+        """Ensure that previous messages are saved to disk."""
         self.fp.flush()
         os.fdatasync(self.fp.fileno())
 
     def close(self):
+        """Flush and close the file."""
         self.flush()
         self.fp.close()
 
 class ArchiveBinaryFile:
+    """Random-access binary output file.
+
+    Binary data may be written to any location in the file.  This uses
+    mmap internally, so the output file must support mmap.
+
+    For efficiency, the file on disk will be resized in units of
+    mmap.PAGESIZE (or more) at a time; the file will be truncated to
+    its "real" size when flush or close is called.
+    """
+
     def __init__(self, filename, window_size = None):
         # Open the file R/W and create if missing, never truncate
         self.fd = os.open(filename, os.O_RDWR|os.O_CREAT, 0o666)
@@ -81,12 +107,19 @@ class ArchiveBinaryFile:
             self.map_end = end
 
     def size(self):
+        """Get the size of the file."""
         return self.real_size
 
     def truncate(self, size):
+        """Truncate or extend the file to the given size."""
         self.real_size = size
 
     def write(self, pos, data, mask = None):
+        """Write data to the file, extending it if necessary.
+
+        If mask is specified, it must be the same length as data; only
+        the bits set in the mask are modified.
+        """
         end = pos + len(data)
         if end > self.real_size:
             self.real_size = end
@@ -100,6 +133,7 @@ class ArchiveBinaryFile:
                                           | (data[j] & mask[j]))
 
     def flush(self):
+        """Ensure that the file contents are saved to disk."""
         self.map_start = self.map_end = 0
         if self.map_buffer is not None:
             self.map_buffer.close()
@@ -110,5 +144,6 @@ class ArchiveBinaryFile:
         os.fdatasync(self.fd)
 
     def close(self):
+        """Flush and close the file."""
         self.flush()
         os.close(self.fd)
