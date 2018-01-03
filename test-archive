@@ -6,11 +6,14 @@ from datetime import timedelta
 from downcast.server import DWCDB
 from downcast.extractor import (Extractor, WaveSampleQueue, NumericValueQueue,
                                 EnumerationValueQueue, AlertQueue,
-                                PatientMappingQueue)
+                                PatientMappingQueue, PatientBasicInfoQueue,
+                                PatientStringAttributeQueue,
+                                PatientDateAttributeQueue)
 from downcast.timestamp import T
 from downcast.output.archive import Archive
 from downcast.output.numerics import NumericValueHandler
 from downcast.output.mapping import PatientMappingHandler
+from downcast.output.patients import PatientHandler
 
 DWCDB.load_config('server.conf')
 
@@ -22,10 +25,16 @@ def test(dest_dir, iterations):
     ex.add_handler(nh)
     mh = PatientMappingHandler(arx)
     ex.add_handler(mh)
+    ph = PatientHandler(arx)
+    ex.add_handler(ph)
 
     pmq = PatientMappingQueue('mapping')
     pmdelay = timedelta(minutes = 30)
     ex.add_queue(pmq)
+
+    ex.add_queue(PatientBasicInfoQueue('patients'))
+    ex.add_queue(PatientStringAttributeQueue('strings'))
+    ex.add_queue(PatientDateAttributeQueue('dates'))
 
     st = T('2016-01-28 14:00:00.000 -05:00')
     ex.add_queue(NumericValueQueue('numerics', start_time = st,
