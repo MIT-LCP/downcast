@@ -21,6 +21,7 @@ from datetime import timedelta
 import json
 import os
 import hashlib
+import logging
 
 from .dispatcher import Dispatcher
 from .parser import (WaveSampleParser, NumericValueParser,
@@ -358,6 +359,9 @@ class ExtractorQueue:
                 skipats.add(ats)
         for ats in skipats:
             del self.acked_saved[ats]
+
+    def _log_warning(self, text):
+        logging.warning(text)
 
 ################################################################
 
