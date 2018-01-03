@@ -34,6 +34,7 @@ class ArchiveLogFile:
     def __init__(self, filename):
         # Open file
         self.fp = open(filename, 'a+b')
+        self.fsync_before_close = False
 
         # Check if file ends with \n; if not, append a marker to
         # indicate the last line is invalid
@@ -64,8 +65,16 @@ class ArchiveLogFile:
 
     def close(self, fsync = True):
         """Flush and close the file."""
+
+        # closing should be idempotent - but raise an exception if
+        # fsync = True and file was previously closed without fsync
+        if self.fp.closed:
+            if not fsync or self.fsync_before_close:
+                return
+
         self.flush(fsync = fsync)
         self.fp.close()
+        self.fsync_before_close = fsync
 
 class ArchiveBinaryFile:
     """Random-access binary output file.
@@ -81,6 +90,7 @@ class ArchiveBinaryFile:
     def __init__(self, filename, window_size = None):
         # Open the file R/W and create if missing, never truncate
         self.fd = os.open(filename, os.O_RDWR|os.O_CREAT, 0o666)
+        self.fsync_before_close = False
 
         self.current_size = os.lseek(self.fd, 0, os.SEEK_END)
         self.real_size = self.current_size
@@ -147,5 +157,14 @@ class ArchiveBinaryFile:
 
     def close(self, fsync = True):
         """Flush and close the file."""
+
+        # closing should be idempotent - but raise an exception if
+        # fsync = True and file was previously closed without fsync
+        if self.fd is None:
+            if not fsync or self.fsync_before_close:
+                return
+
         self.flush(fsync = fsync)
         os.close(self.fd)
+        self.fd = None
+        self.fsync_before_close = fsync
