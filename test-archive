@@ -1,13 +1,16 @@
 #!/usr/bin/python3
 
 import shutil
+from datetime import timedelta
 
 from server import DWCDB
 from extractor import (Extractor, WaveSampleQueue, NumericValueQueue,
-                       EnumerationValueQueue, AlertQueue)
+                       EnumerationValueQueue, AlertQueue,
+                       PatientMappingQueue)
 from timestamp import T
 from output.archive import Archive
 from output.numerics import NumericValueHandler
+from output.mapping import PatientMappingHandler
 
 DWCDB.load_config('server.conf')
 
@@ -17,10 +20,18 @@ def test(dest_dir, iterations):
     arx = Archive(dest_dir)
     nh = NumericValueHandler(arx)
     ex.add_handler(nh)
+    mh = PatientMappingHandler(arx)
+    ex.add_handler(mh)
+
+    pmq = PatientMappingQueue('mapping')
+    pmdelay = timedelta(minutes = 30)
+    ex.add_queue(pmq)
 
     st = T('2016-01-28 14:00:00.000 -05:00')
     ex.add_queue(NumericValueQueue('numerics', start_time = st,
-                                   messages_per_batch = 100))
+                                   messages_per_batch = 100,
+                                   patient_mapping_queue = pmq,
+                                   patient_mapping_delay = pmdelay))
     for _ in range(iterations):
         ex.run()
     ex.flush()
