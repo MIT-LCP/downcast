@@ -56,14 +56,15 @@ class ArchiveLogFile:
         self.fp.write(msg.encode('UTF-8'))
         self.fp.write(b'\n')
 
-    def flush(self):
+    def flush(self, fsync = True):
         """Ensure that previous messages are saved to disk."""
         self.fp.flush()
-        os.fdatasync(self.fp.fileno())
+        if fsync:
+            os.fdatasync(self.fp.fileno())
 
-    def close(self):
+    def close(self, fsync = True):
         """Flush and close the file."""
-        self.flush()
+        self.flush(fsync = fsync)
         self.fp.close()
 
 class ArchiveBinaryFile:
@@ -132,7 +133,7 @@ class ArchiveBinaryFile:
                 self.map_buffer[i + j] = ((self.map_buffer[i + j] & ~mask[j])
                                           | (data[j] & mask[j]))
 
-    def flush(self):
+    def flush(self, fsync = True):
         """Ensure that the file contents are saved to disk."""
         self.map_start = self.map_end = 0
         if self.map_buffer is not None:
@@ -141,9 +142,10 @@ class ArchiveBinaryFile:
         if self.real_size != self.current_size:
             os.ftruncate(self.fd, self.real_size)
             self.current_size = self.real_size
-        os.fdatasync(self.fd)
+        if fsync:
+            os.fdatasync(self.fd)
 
-    def close(self):
+    def close(self, fsync = True):
         """Flush and close the file."""
-        self.flush()
+        self.flush(fsync = fsync)
         os.close(self.fd)
