@@ -42,6 +42,7 @@ class Extractor:
         self.queue_timestamp = OrderedDict()
         if dest_dir is not None:
             os.makedirs(dest_dir, exist_ok = True)
+        self.dispatcher.add_dead_letter_handler(DefaultDeadLetterHandler())
 
     def add_queue(self, queue):
         """Add an input queue."""
@@ -53,10 +54,6 @@ class Extractor:
     def add_handler(self, handler):
         """Add a message handler."""
         self.dispatcher.add_handler(handler)
-
-    def add_dead_letter_handler(self, handler):
-        """Add a dead-letter handler."""
-        self.dispatcher.add_dead_letter_handler(handler)
 
     def flush(self):
         """Flush all output handlers, and save queue state to disk."""
@@ -362,6 +359,10 @@ class ExtractorQueue:
 
     def _log_warning(self, text):
         logging.warning(text)
+
+class DefaultDeadLetterHandler:
+    def send_message(self, channel, message, dispatcher, ttl):
+        logging.warning('Unhandled message: %r' % (message,))
 
 ################################################################
 
