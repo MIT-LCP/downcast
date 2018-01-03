@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 from weakref import WeakSet
-from dispatcher import Dispatcher
+from downcast.dispatcher import Dispatcher
 
 class TestMessage:
     def __init__(self, seqnum, msgstr):

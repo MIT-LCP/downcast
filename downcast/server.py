@@ -19,10 +19,10 @@
 from configparser import ConfigParser
 import pymssql
 
-from parser import (WaveAttrParser, NumericAttrParser,
-                    EnumerationAttrParser, PatientMappingParser)
-from attributes import (undefined_wave, undefined_numeric,
-                        undefined_enumeration)
+from .parser import (WaveAttrParser, NumericAttrParser,
+                     EnumerationAttrParser, PatientMappingParser)
+from .attributes import (undefined_wave, undefined_numeric,
+                         undefined_enumeration)
 
 class DWCDB:
     _config = None

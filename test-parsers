@@ -2,13 +2,13 @@
 
 from datetime import datetime
 
-from server import DWCDB
-from parser import (WaveSampleParser, AlertParser, NumericValueParser,
-                    EnumerationValueParser, WaveAttrParser,
-                    NumericAttrParser, EnumerationAttrParser,
-                    BedTagParser, PatientDateAttributeParser,
-                    PatientStringAttributeParser,
-                    PatientBasicInfoParser, PatientMappingParser)
+from downcast.server import DWCDB
+from downcast.parser import (WaveSampleParser, AlertParser, NumericValueParser,
+                             EnumerationValueParser, WaveAttrParser,
+                             NumericAttrParser, EnumerationAttrParser,
+                             BedTagParser, PatientDateAttributeParser,
+                             PatientStringAttributeParser,
+                             PatientBasicInfoParser, PatientMappingParser)
 
 DWCDB.load_config('server.conf')
 db = DWCDB('demo')

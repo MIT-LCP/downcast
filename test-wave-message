@@ -4,10 +4,10 @@ from collections import OrderedDict
 import pymssql
 import sys
 
-from dispatcher import Dispatcher
-from server import DWCDB
-from parser import WaveSampleParser
-from messages import WaveSampleMessage
+from downcast.dispatcher import Dispatcher
+from downcast.server import DWCDB
+from downcast.parser import WaveSampleParser
+from downcast.messages import WaveSampleMessage
 
 class TestHandler:
     def __init__(self):

@@ -22,13 +22,13 @@ import json
 import os
 import hashlib
 
-from dispatcher import Dispatcher
-from parser import (WaveSampleParser, NumericValueParser,
-                    EnumerationValueParser, AlertParser,
-                    PatientMappingParser, PatientBasicInfoParser,
-                    PatientDateAttributeParser,
-                    PatientStringAttributeParser, BedTagParser)
-from timestamp import (T, very_old_timestamp)
+from .dispatcher import Dispatcher
+from .parser import (WaveSampleParser, NumericValueParser,
+                     EnumerationValueParser, AlertParser,
+                     PatientMappingParser, PatientBasicInfoParser,
+                     PatientDateAttributeParser,
+                     PatientStringAttributeParser, BedTagParser)
+from .timestamp import (T, very_old_timestamp)
 
 class Extractor:
     def __init__(self, db, dest_dir, fatal_exceptions = False):

@@ -1,9 +1,9 @@
 #!/usr/bin/python3
 
-from server import DWCDB
-from extractor import (Extractor, WaveSampleQueue, NumericValueQueue,
-                       EnumerationValueQueue, AlertQueue)
-from timestamp import T
+from downcast.server import DWCDB
+from downcast.extractor import (Extractor, WaveSampleQueue, NumericValueQueue,
+                                EnumerationValueQueue, AlertQueue)
+from downcast.timestamp import T
 
 class TestHandler():
     def send_message(self, channel, message, source, ttl):

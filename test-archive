@@ -3,14 +3,14 @@
 import shutil
 from datetime import timedelta
 
-from server import DWCDB
-from extractor import (Extractor, WaveSampleQueue, NumericValueQueue,
-                       EnumerationValueQueue, AlertQueue,
-                       PatientMappingQueue)
-from timestamp import T
-from output.archive import Archive
-from output.numerics import NumericValueHandler
-from output.mapping import PatientMappingHandler
+from downcast.server import DWCDB
+from downcast.extractor import (Extractor, WaveSampleQueue, NumericValueQueue,
+                                EnumerationValueQueue, AlertQueue,
+                                PatientMappingQueue)
+from downcast.timestamp import T
+from downcast.output.archive import Archive
+from downcast.output.numerics import NumericValueHandler
+from downcast.output.mapping import PatientMappingHandler
 
 DWCDB.load_config('server.conf')
 

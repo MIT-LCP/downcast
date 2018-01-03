@@ -20,8 +20,8 @@ import os
 import re
 import json
 
-from messages import WaveSampleMessage, NumericValueMessage
-from output.files import ArchiveLogFile
+from ..messages import WaveSampleMessage, NumericValueMessage
+from .files import ArchiveLogFile
 
 class Archive:
     def __init__(self, base_dir):
