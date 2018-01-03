@@ -20,7 +20,7 @@ from configparser import ConfigParser
 import pymssql
 
 from parser import (WaveAttrParser, NumericAttrParser,
-                    EnumerationAttrParser)
+                    EnumerationAttrParser, PatientMappingParser)
 from attributes import (undefined_wave, undefined_numeric,
                         undefined_enumeration)
 
@@ -42,6 +42,7 @@ class DWCDB:
         self.wave_attr = {}
         self.numeric_attr = {}
         self.enumeration_attr = {}
+        self.patient_map = {}
         self.attr_db = None
 
     def __repr__(self):
@@ -123,6 +124,25 @@ class DWCDB:
             return None
         self.enumeration_attr[enumeration_id] = v
         return v
+
+    def get_patient_id(self, mapping_id, sync):
+        if mapping_id in self.patient_map:
+            return self.patient_map[mapping_id]
+        if not sync:
+            return None
+
+        p = PatientMappingParser(dialect = self.dialect,
+                                 paramstyle = self.paramstyle,
+                                 limit = 2, mapping_id = mapping_id)
+        try:
+            v = self._parse_attr(p, True)
+        except UnknownAttrError:
+            return None
+        self.set_patient_id(mapping_id, v.patient_id)
+        return v.patient_id
+
+    def set_patient_id(self, mapping_id, patient_id):
+        self.patient_map[mapping_id] = patient_id
 
     def _parse_attr(self, parser, sync):
         if self.attr_db is None:
