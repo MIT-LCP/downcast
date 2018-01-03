@@ -18,10 +18,10 @@
 
 import os
 import re
-import errno
 import json
 
 from messages import WaveSampleMessage, NumericValueMessage
+from output.files import ArchiveLogFile
 
 class Archive:
     def __init__(self, base_dir):
@@ -232,33 +232,3 @@ class ArchiveRecord:
         if name in self.files:
             self.files[name].close()
             del self.files[name]
-
-class ArchiveLogFile:
-    def __init__(self, filename):
-        # Open file
-        self.fp = open(filename, 'a+b')
-
-        # Check if file ends with \n; if not, append a marker to
-        # indicate the last line is invalid
-        try:
-            self.fp.seek(-1, os.SEEK_END)
-        except OSError as e:
-            if e.errno == errno.EINVAL:
-                return
-            else:
-                raise
-        c = self.fp.read(1)
-        if c != b'\n' and c != b'':
-            self.fp.write(b'\030\r####\030\n')
-
-    def append(self, msg):
-        self.fp.write(msg.encode('UTF-8'))
-        self.fp.write(b'\n')
-
-    def flush(self):
-        self.fp.flush()
-        os.fdatasync(self.fp.fileno())
-
-    def close(self):
-        self.flush()
-        self.fp.close()
