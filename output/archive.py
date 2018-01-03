@@ -63,13 +63,15 @@ class Archive:
                 record_id = record_id,
                 datestamp = datestamp)
 
-    def get_record(self, message):
+    def get_record(self, message, sync):
         servername = message.origin.servername
-        patient_id = message.origin.get_patient_id(message.mapping_id, True)
+        patient_id = message.origin.get_patient_id(message.mapping_id, sync)
         if patient_id is not None:
             record_id = str(patient_id)
-        else:
+        elif sync:
             record_id = str(message.mapping_id)
+        else:
+            return None
 
         rec = self.records.get((servername, record_id))
 

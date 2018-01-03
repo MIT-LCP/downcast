@@ -37,7 +37,11 @@ class NumericValueHandler:
             return
 
         # Look up the corresponding record and add event to the time map
-        record = self.archive.get_record(msg)
+        record = self.archive.get_record(msg, (ttl <= 0))
+        if record is None:
+            # Record not yet available - hold message in pending and
+            # continue processing
+            return
 
         # Open or create a log file
         logfile = record.open_log_file('_numerics')
