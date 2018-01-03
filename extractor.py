@@ -85,6 +85,23 @@ class Extractor:
         # Retrieve and submit a batch of messages.
         try:
             cursor = self.conn.cursor()
+
+            # Check if this queue is stalled (waiting for another
+            # queue before it can proceed.)  In that case, the other
+            # queue inherits this one's priority.
+            origq = q
+            sq = q.stalling_queue()
+            while sq is not None:
+                q = sq
+                sq = q.stalling_queue()
+
+            # If the original queue was stalled, and the current queue
+            # is up-to-date, then check all queues to update the current
+            # time.  This avoids looping indefinitely if the messages
+            # we're anticipating never actually show up.
+            if q is not origq and q.reached_present():
+                self._update_current_time(cursor)
+
             self._run_queries(q, cursor)
         finally:
             cursor.close()
@@ -103,10 +120,10 @@ class Extractor:
             if ts > self.current_timestamp:
                 self.current_timestamp = ts
 
-            # queue_timestamp = maximum timestamp of any
+            # query_time = maximum timestamp of any
             # message we've seen in this queue
-            if ts > self.queue_timestamp[queue]:
-                self.queue_timestamp[queue] = ts
+            if ts > queue.query_time:
+                queue.query_time = ts
 
             queue.push_message(msg, self.dispatcher)
 
@@ -114,8 +131,19 @@ class Extractor:
         # sleep for some minimum time period before hitting it
         # again.  The delay time is dependent on the queue type.
         if queue.reached_present():
+            queue.query_time = self.current_timestamp
             self.queue_timestamp[queue] = (self.current_timestamp
                                            + queue.idle_delay())
+        else:
+            self.queue_timestamp[queue] = queue.query_time
+
+    def _update_current_time(self, cursor):
+        for queue in self.queues:
+            parser = queue.final_message_parser(self.db)
+            for msg in self.db.get_messages(parser, cursor = cursor):
+                ts = queue.message_timestamp(msg)
+                if ts > self.current_timestamp:
+                    self.current_timestamp = ts
 
 class ExtractorQueue:
     def __init__(self, queue_name, start_time = None,
@@ -130,6 +158,7 @@ class ExtractorQueue:
         self.last_batch_count_at_newest = 0
         self.last_batch_limit = 0
         self.last_batch_count = 0
+        self.query_time = very_old_timestamp
 
     def load_state(self, dest_dir):
         filename = self._state_file_name(dest_dir)
@@ -222,6 +251,9 @@ class ExtractorQueue:
         # results, that would NOT raise an exception.  in such a
         # situation, the queue should not be treated as up-to-date.
         return (self.last_batch_count < self.last_batch_limit)
+
+    def stalling_queue(self):
+        return None
 
     def push_message(self, message, dispatcher):
         ts = self.message_timestamp(message)
