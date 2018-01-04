@@ -20,6 +20,7 @@ import re
 from uuid import UUID
 from decimal import Decimal
 from datetime import date, datetime, timezone, timedelta
+import warnings
 
 from .timestamp import T
 from .messages import (WaveSampleMessage, AlertMessage,
@@ -106,9 +107,14 @@ class SimpleMessageParser(MessageParser):
                     return None
                 try:
                     return conv(value)
-                except Exception as e:
-                    raise TypeError('column %s is %r, not %s'
-                                    % (name, value, conv.__name__)) from e
+                except Exception:
+                    if mandatory:
+                        raise DBSyntaxError(query, row, name, value, conv)
+                    else:
+                        warnings.warn(DBSyntaxWarning(query, row, name,
+                                                      value, conv),
+                                      stacklevel = 2)
+                        return None
             return self.parse_columns(origin, parse_column)
 
         return [(query, handle_row)]
@@ -504,3 +510,27 @@ class PatientMappingParser(TimestampMessageParser):
             timestamp         = cols('Timestamp', _timestamp, True),
             is_mapped         = cols('IsMapped',  _boolean),
             hostname          = cols('Hostname',  _string))
+
+class DBSyntaxError(Exception):
+    """Exception indicating that a message cannot be parsed."""
+    def __init__(self, query, row, column, value, converter):
+        self.query = query
+        self.row = row
+        self.column = column
+        self.value = value
+        self.converter = converter
+    def __str__(self):
+        return ('in response to %r:\n\tin row %r:\n\tcolumn %s is not %s'
+                % (self.query, self.row, self.column, self.converter.__name__))
+
+class DBSyntaxWarning(Warning):
+    """Warning indicating that part of a message cannot be parsed."""
+    def __init__(self, query, row, column, value, converter):
+        self.query = query
+        self.row = row
+        self.column = column
+        self.value = value
+        self.converter = converter
+    def __str__(self):
+        return ('in response to %r:\n\tin row %r:\n\tcolumn %s is not %s'
+                % (self.query, self.row, self.column, self.converter.__name__))
