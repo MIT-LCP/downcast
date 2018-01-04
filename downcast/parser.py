@@ -1,7 +1,7 @@
 #
 # downcast - tools for unpacking patient data from DWC
 #
-# Copyright (c) 2017 Laboratory for Computational Physiology
+# Copyright (c) 2018 Laboratory for Computational Physiology
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -45,6 +45,8 @@ class MessageParser:
         qstr = 'SELECT '
         if limit is not None and self.dialect == 'ms':
             qstr += ('TOP %d ' % limit)
+        if self.dialect != 'ms':
+            table = '[' + table + ']'
         qstr += ','.join(columns) + ' FROM ' + table
         params = []
         if len(constraints) > 0:
@@ -180,7 +182,7 @@ def _uuid(value):
         return UUID(value)
 
 def _to_uuid(value):
-    return _uuid(value)
+    return str(_uuid(value))
 
 def _timestamp(value):
     return T(value)
@@ -206,6 +208,8 @@ def _integer(value):
 def _real(value):
     if isinstance(value, Decimal):
         return value
+    elif isinstance(value, float):
+        return value
     else:
         raise TypeError()
 
@@ -224,6 +228,10 @@ def _bytes(value):
 def _boolean(value):
     if isinstance(value, bool):
         return value
+    elif value is 1:
+        return True
+    elif value is 0:
+        return False
     else:
         raise TypeError()
 
