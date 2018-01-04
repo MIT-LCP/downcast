@@ -1,7 +1,7 @@
 #
 # downcast - tools for unpacking patient data from DWC
 #
-# Copyright (c) 2017 Laboratory for Computational Physiology
+# Copyright (c) 2018 Laboratory for Computational Physiology
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -98,10 +98,13 @@ class T(datetime):
     def __str__(self):
         tzoffs = round(self.tzinfo.utcoffset(None).total_seconds() / 60)
         (tzh, tzm) = divmod(abs(tzoffs), 60)
-        return ('%d-%02d-%02d %02d:%02d:%02d.%06d %s%02d:%02d'
+        if self.microsecond % 1000 == 0:
+            f = '%03d' % (self.microsecond // 1000)
+        else:
+            f = '%06d' % self.microsecond
+        return ('%d-%02d-%02d %02d:%02d:%02d.%s %s%02d:%02d'
                 % (self.year, self.month, self.day,
-                   self.hour, self.minute, self.second,
-                   self.microsecond,
+                   self.hour, self.minute, self.second, f,
                    ('-' if tzoffs < 0 else '+'), tzh, tzm))
 
     def __repr__(self):
