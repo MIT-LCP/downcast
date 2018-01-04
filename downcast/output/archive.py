@@ -1,7 +1,7 @@
 #
 # downcast - tools for unpacking patient data from DWC
 #
-# Copyright (c) 2017 Laboratory for Computational Physiology
+# Copyright (c) 2018 Laboratory for Computational Physiology
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -195,6 +195,7 @@ class ArchiveRecord:
         tmpfname = os.path.join(self.path, '_' + name + '.tmp')
         with open(tmpfname, 'wt', encoding = 'UTF-8') as f:
             json.dump(content, f)
+            f.write('\n')
             f.flush()
             os.fdatasync(f.fileno())
         os.rename(tmpfname, fname)

@@ -1,7 +1,7 @@
 #
 # downcast - tools for unpacking patient data from DWC
 #
-# Copyright (c) 2017 Laboratory for Computational Physiology
+# Copyright (c) 2018 Laboratory for Computational Physiology
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -201,6 +201,7 @@ class ExtractorQueue:
         tmpfname = filename + '.tmp'
         with open(tmpfname, 'wt', encoding = 'UTF-8') as f:
             json.dump(data, f)
+            f.write('\n')
             f.flush()
             os.fdatasync(f.fileno())
         os.rename(tmpfname, filename)
