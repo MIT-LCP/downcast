@@ -522,6 +522,9 @@ class DBSyntaxError(Exception):
     def __str__(self):
         return ('in response to %r:\n\tin row %r:\n\tcolumn %s is not %s'
                 % (self.query, self.row, self.column, self.converter.__name__))
+    def warning(self):
+        return DBSyntaxWarning(self.query, self.row, self.column,
+                               self.value, self.converter)
 
 class DBSyntaxWarning(Warning):
     """Warning indicating that part of a message cannot be parsed."""

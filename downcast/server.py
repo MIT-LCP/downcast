@@ -19,9 +19,11 @@
 from configparser import ConfigParser
 import pymssql
 import sqlite3
+import warnings
 
 from .parser import (WaveAttrParser, NumericAttrParser,
-                     EnumerationAttrParser, PatientMappingParser)
+                     EnumerationAttrParser, PatientMappingParser,
+                     DBSyntaxError)
 from .attributes import (undefined_wave, undefined_numeric,
                          undefined_enumeration)
 
@@ -102,6 +104,9 @@ class DWCDB:
             v = self._parse_attr(p, sync)
         except UnknownAttrError:
             v = undefined_wave
+        except DBSyntaxError as e:
+            warnings.warn(e.warning(), stacklevel = 2)
+            v = undefined_wave
         except UnavailableAttrError:
             return None
         self.wave_attr[wave_id] = v
@@ -118,6 +123,9 @@ class DWCDB:
             v = self._parse_attr(p, sync)
         except UnknownAttrError:
             v = undefined_numeric
+        except DBSyntaxError as e:
+            warnings.warn(e.warning(), stacklevel = 2)
+            v = undefined_numeric
         except UnavailableAttrError:
             return None
         self.numeric_attr[numeric_id] = v
@@ -133,6 +141,9 @@ class DWCDB:
         try:
             v = self._parse_attr(p, sync)
         except UnknownAttrError:
+            v = undefined_enumeration
+        except DBSyntaxError as e:
+            warnings.warn(e.warning(), stacklevel = 2)
             v = undefined_enumeration
         except UnavailableAttrError:
             return None
@@ -151,6 +162,10 @@ class DWCDB:
         try:
             v = self._parse_attr(p, True)
         except UnknownAttrError:
+            return None
+        except DBSyntaxError as e:
+            warnings.warn(e.warning(), stacklevel = 2)
+            self.patient_map[mapping_id] = None
             return None
         self.set_patient_id(mapping_id, v.patient_id)
         return v.patient_id
