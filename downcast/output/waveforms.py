@@ -211,7 +211,7 @@ class WaveOutputInfo:
                 self.frame_size += spf
 
         self.signal_file = datname
-        self.current_signals = signals
+        self.segment_signals = signals
         self.segment_start = start
         self.output_end_time = start
 
@@ -220,7 +220,7 @@ class WaveOutputInfo:
         signals = sorted(sigdata)
 
         if (signals != self.segment_signals
-                or self.output_time is None
+                or self.output_end_time is None
                 or start > self.output_end_time
                 or start < self.segment_start):
             self.open_segment(record, ('%09d' % start), start, signals)
