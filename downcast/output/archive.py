@@ -21,7 +21,7 @@ import re
 import json
 
 from ..messages import WaveSampleMessage, NumericValueMessage
-from .files import ArchiveLogFile
+from .files import ArchiveLogFile, ArchiveBinaryFile
 
 class Archive:
     def __init__(self, base_dir):
@@ -232,6 +232,13 @@ class ArchiveRecord:
         if name not in self.files:
             fname = os.path.join(self.path, name)
             self.files[name] = ArchiveLogFile(fname)
+            self.modified = True
+        return self.files[name]
+
+    def open_bin_file(self, name, **kwargs):
+        if name not in self.files:
+            fname = os.path.join(self.path, name)
+            self.files[name] = ArchiveBinaryFile(fname, **kwargs)
             self.modified = True
         return self.files[name]
 
