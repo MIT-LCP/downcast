@@ -1,7 +1,7 @@
 #
 # downcast - tools for unpacking patient data from DWC
 #
-# Copyright (c) 2017 Laboratory for Computational Physiology
+# Copyright (c) 2018 Laboratory for Computational Physiology
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 
 from configparser import ConfigParser
 import pymssql
+import sqlite3
 
 from .parser import (WaveAttrParser, NumericAttrParser,
                      EnumerationAttrParser, PatientMappingParser)
@@ -33,12 +34,22 @@ class DWCDB:
 
     def __init__(self, servername):
         self.servername = servername
-        self.hostname = DWCDB._config[servername]['hostname']
-        self.username = DWCDB._config[servername]['username']
-        self.password = DWCDB._config[servername]['password']
-        self.database = DWCDB._config[servername]['database']
-        self.dialect = 'ms'
-        self.paramstyle = pymssql.paramstyle
+        self.dbtype = DWCDB._config.get(servername, 'type', fallback = 'mssql')
+
+        if self.dbtype == 'mssql':
+            self.hostname = DWCDB._config[servername]['hostname']
+            self.username = DWCDB._config[servername]['username']
+            self.password = DWCDB._config[servername]['password']
+            self.database = DWCDB._config[servername]['database']
+            self.dialect = 'ms'
+            self.paramstyle = pymssql.paramstyle
+        elif self.dbtype == 'sqlite':
+            self.filename = DWCDB._config[servername]['file']
+            self.dialect = 'sqlite'
+            self.paramstyle = sqlite3.paramstyle
+        else:
+            raise ValueError('unknown database type')
+
         self.wave_attr = {}
         self.numeric_attr = {}
         self.enumeration_attr = {}
@@ -49,8 +60,11 @@ class DWCDB:
         return ('%s(%r)' % (self.__class__.__name__, self.servername))
 
     def connect(self):
-        return pymssql.connect(self.hostname, self.username,
-                               self.password, self.database)
+        if self.dbtype == 'mssql':
+            return pymssql.connect(self.hostname, self.username,
+                                   self.password, self.database)
+        elif self.dbtype == 'sqlite':
+            return sqlite3.connect(self.filename)
 
     def get_messages(self, parser, connection = None, cursor = None):
         tmpconn = None
