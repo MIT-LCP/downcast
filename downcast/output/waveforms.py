@@ -89,25 +89,22 @@ class WaveSampleHandler:
         # remaining data
 
         # Write out buffered data up to flush_time
-        while (info.output_flushed_time is None
-               or info.output_flushed_time < flush_time):
-            if info.output_flushed_time is not None:
-                info.signal_buffer.truncate_before(info.output_flushed_time)
+        while (info.flushed_time is None or info.flushed_time < flush_time):
+            if info.flushed_time is not None:
+                info.signal_buffer.truncate_before(info.flushed_time)
 
             (start, end, sigdata) = info.signal_buffer.get_signals()
             if sigdata is None or start >= flush_time:
                 break
             if end > flush_time:
                 end = flush_time
-            if (info.output_flushed_time is not None
-                    and end <= info.output_flushed_time):
+            if (info.flushed_time is not None and end <= info.flushed_time):
                 break
             info.write_signals(record, start, end, sigdata)
-            info.output_flushed_time = end
+            info.flushed_time = end
 
         # If the entire message has now been written, then acknowledge it
-        if (info.output_flushed_time is not None
-                and info.output_flushed_time >= msg_end):
+        if (info.flushed_time is not None and info.flushed_time >= msg_end):
             source.ack_message(chn, msg, self)
 
     def flush(self):
@@ -172,8 +169,8 @@ class WaveOutputInfo:
         # and/or header file)
         self.segment_signals = []
         self.segment_start = None
-        self.output_flushed_time = None
-        self.output_end_time = None
+        self.segment_end = None
+        self.flushed_time = None
 
     def close_segment(self, record):
         if self.signal_file is not None:
@@ -213,15 +210,15 @@ class WaveOutputInfo:
         self.signal_file = datname
         self.segment_signals = signals
         self.segment_start = start
-        self.output_end_time = start
+        self.segment_end = start
 
     def write_signals(self, record, start, end, sigdata):
         # FIXME: we don't want to sort by WaveAttr specifically
         signals = sorted(sigdata)
 
         if (signals != self.segment_signals
-                or self.output_end_time is None
-                or start > self.output_end_time
+                or self.segment_end is None
+                or start > self.segment_end
                 or start < self.segment_start):
             self.open_segment(record, ('%09d' % start), start, signals)
 
@@ -239,8 +236,8 @@ class WaveOutputInfo:
                 ind = fn * self.frame_size + self.frame_offset[signal] + sn
                 sf.write(ind * 2, samples[2*i:2*i+2])
 
-        if end > self.output_end_time:
-            self.output_end_time = end
+        if end > self.segment_end:
+            self.segment_end = end
 
 ################################################################
 
