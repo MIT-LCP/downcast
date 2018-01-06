@@ -62,6 +62,30 @@ class Extractor:
             for queue in self.queues:
                 queue.save_state(self.dest_dir)
 
+    def idle(self):
+        """Check whether all available messages have been received.
+
+        This means that run() will not do any further processing until
+        new messages are added to the input database.
+        """
+
+        # Find the most out-of-date queue.
+        q = min(self.queues, key = self.queue_timestamp.get)
+
+        # If the oldest queue timestamp is greater than the current
+        # time, then all queues must now be idle.
+        if self.queue_timestamp[q] > self.current_timestamp:
+            return True
+
+        # Check if this queue is stalled waiting for another queue.
+        sq = q.stalling_queue()
+        while sq is not None:
+            q = sq
+            sq = q.stalling_queue()
+
+        # Check whether that queue is idle.
+        return (self.queue_timestamp[q] > self.current_timestamp)
+
     def run(self):
         """Perform some amount of work.
 
