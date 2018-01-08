@@ -259,6 +259,26 @@ class WaveSampleParser(MappingIDMessageParser):
             paced_pulses        = cols('PacedPulses',        _string),
             mapping_id          = cols('MappingId',          _uuid, True));
 
+class DummyWaveSampleParser(MappingIDMessageParser):
+    """Parser for waveform metadata, excluding the actual samples."""
+    def table(self):
+        return '_Export.WaveSample_'
+    def parse_columns(self, origin, cols):
+        if self.dialect == 'ms':
+            wsl = cols('datalength(WaveSamples)', _integer, True)
+        elif self.dialect == 'sqlite':
+            wsl = cols('length(WaveSamples)', _integer, True)
+        return WaveSampleMessage(
+            origin              = origin,
+            wave_id             = cols('WaveId',             _integer, True),
+            timestamp           = cols('TimeStamp',          _timestamp, True),
+            sequence_number     = cols('SequenceNumber',     _integer, True),
+            wave_samples        = b'\0' * (wsl or 0),
+            invalid_samples     = cols('InvalidSamples',     _string),
+            unavailable_samples = cols('UnavailableSamples', _string),
+            paced_pulses        = cols('PacedPulses',        _string),
+            mapping_id          = cols('MappingId',          _uuid, True));
+
 class AlertParser(MappingIDMessageParser):
     """Parser for alert messages."""
     def table(self):

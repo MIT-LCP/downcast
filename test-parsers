@@ -3,7 +3,8 @@
 from datetime import datetime
 
 from downcast.server import DWCDB
-from downcast.parser import (WaveSampleParser, AlertParser, NumericValueParser,
+from downcast.parser import (WaveSampleParser, DummyWaveSampleParser,
+                             AlertParser, NumericValueParser,
                              EnumerationValueParser, WaveAttrParser,
                              NumericAttrParser, EnumerationAttrParser,
                              BedTagParser, PatientDateAttributeParser,
@@ -53,6 +54,7 @@ test(WaveSampleParser(limit = 1, seqnum_gt = 507279000000))
 test(WaveSampleParser(limit = 1, seqnum_le = 507279000000))
 test(WaveSampleParser(limit = 1, seqnum_lt = 507279000000))
 test(WaveSampleParser(limit = 1, seqnum = 507278429440))
+test(DummyWaveSampleParser(limit = 2))
 
 test(AlertParser(limit = 2))
 test(AlertParser(limit = 1, mapping_id = '7cc594d9-d8dc-4bc7-9522-59cbc8091d23'))
