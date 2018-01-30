@@ -241,6 +241,12 @@ def _boolean(value):
     else:
         raise TypeError()
 
+def _to_boolean(value):
+    if value:
+        return 1
+    else:
+        return 0
+
 ################################################################
 
 class WaveSampleParser(MappingIDMessageParser):
@@ -511,7 +517,7 @@ class PatientBasicInfoParser(TimestampMessageParser):
 class PatientMappingParser(TimestampMessageParser):
     """Parser for patient mapping info."""
     def __init__(self, patient_id = None, mapping_id = None,
-                 hostname = None, **kwargs):
+                 is_mapped = None, hostname = None, **kwargs):
         TimestampMessageParser.__init__(self, **kwargs)
         if mapping_id is not None:
             self.add_constraint('Id = ', _to_uuid(mapping_id))
@@ -519,6 +525,8 @@ class PatientMappingParser(TimestampMessageParser):
             self.add_constraint('PatientId = ', _to_uuid(patient_id))
         if hostname is not None:
             self.add_constraint('Hostname = ', hostname)
+        if is_mapped is not None:
+            self.add_constraint('IsMapped = ', _to_boolean(is_mapped))
 
     def table(self):
         return '_Export.PatientMapping_'

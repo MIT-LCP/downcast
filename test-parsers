@@ -147,4 +147,4 @@ test(PatientMappingParser(limit = 1, time_lt = pt('Jan 28 2016 16:00:00.0 -0500'
 test(PatientMappingParser(limit = 1, time_le = pt('Jan 28 2016 16:00:00.0 -0500')))
 test(PatientMappingParser(limit = 1, time = pt('Jan 28 2016 13:26:53.456 -0500')))
 test(PatientMappingParser(limit = 1, hostname = 'RDEGEN8-1'))
-
+test(PatientMappingParser(limit = 1, is_mapped = False))
