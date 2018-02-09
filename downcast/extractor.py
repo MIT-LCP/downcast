@@ -22,6 +22,7 @@ import json
 import os
 import hashlib
 import logging
+import sys
 
 from .dispatcher import Dispatcher
 from .parser import (WaveSampleParser, NumericValueParser,
@@ -181,6 +182,8 @@ class ExtractorQueue:
         self.last_batch_count_at_newest = 0
         self.last_batch_limit = 0
         self.last_batch_count = 0
+        self.last_batch_end = None
+        self.last_batch_duration = None
         self.query_time = very_old_timestamp
 
     def load_state(self, dest_dir):
@@ -240,21 +243,46 @@ class ExtractorQueue:
         return m.hexdigest()
 
     def next_message_parser(self, db):
-        # this is a bit of a kludge: if batch limit is too small (more
-        # than limit/2 messages with exactly the same timestamp),
-        # double it until this is no longer true.  possibly better
-        # would be to issue a compound query like 'all messages at
-        # timestamp T, plus the first N messages at timestamp > T'.
+        if self.newest_seen_timestamp is None:
+            # We know nothing.  Simply read the N earliest messages
+            # from the table.
+            n = self.limit_per_batch
+            d = None
 
-        n = self.limit_per_batch
-        while n < (self.last_batch_count_at_newest * 2):
-            n *= 2
+        elif (self.last_batch_count > self.last_batch_count_at_newest
+              or self.last_batch_duration is None):
+            # Our last query gave results from multiple timestamps (or
+            # our last query was the very first, so it didn't have a
+            # duration), so advance by the default batch duration.
+            n = self.limit_per_batch
+            d = self.default_batch_duration()
+
+        elif self.last_batch_count < self.last_batch_limit:
+            # Our last query gave results for only one timestamp, and
+            # fewer than the batch limit; temporarily increase the
+            # duration.
+            n = self.last_batch_limit
+            d = self.last_batch_duration * 2
+
+        else:
+            # Our last query gave results for only one timestamp, and
+            # hit the batch limit; temporarily increase the limit.
+            n = self.last_batch_limit * 2
+            d = self.last_batch_duration
+
+        start = self.newest_seen_timestamp
+        if start is None:
+            end = self.end_time
+        else:
+            if self.end_time is not None:
+                d = min(d, self.end_time - start)
+            end = start + d
         self.last_batch_limit = n
+        self.last_batch_end = end
+        self.last_batch_duration = d
         self.last_batch_count = 0
         self.last_batch_count_at_newest = 0
-        return self.message_parser(db, n,
-                                   time_ge = self.newest_seen_timestamp,
-                                   time_lt = self.end_time)
+        return self.message_parser(db, n, time_ge = start, time_le = end)
 
     def final_message_parser(self, db):
         return self.message_parser(db, 1,
@@ -263,22 +291,14 @@ class ExtractorQueue:
                                    reverse = True)
 
     def reached_present(self):
-        # this is nasty.  we want to answer the question "did the
-        # previous query end because we reached the limit of available
-        # data, or because we reached the batch limit?"  once we've
-        # reached the end of available data then we do not want to hit
-        # this queue again until all other queues catch up.
-
-        # of course "present" doesn't mean "current time on the system
-        # where this code is running" or even "current time on the
-        # exporting system", it means "timestamp of data that is
-        # currently being inserted into DWC database."
-
-        # XXX determine whether there is any situation under which the
-        # query could be aborted without returning all requested
-        # results, that would NOT raise an exception.  in such a
-        # situation, the queue should not be treated as up-to-date.
-        return (self.last_batch_count < self.last_batch_limit)
+        if self.end_time is None:
+            # XXX This is broken.  With requirement for time-limited
+            # queries we need a different approach for real-time
+            # conversion.
+            return (self.last_batch_count < self.last_batch_limit)
+        else:
+            return (self.last_batch_end >= self.end_time
+                    and self.last_batch_count < self.last_batch_limit)
 
     def stalling_queue(self):
         return None
@@ -415,6 +435,9 @@ class MappingIDExtractorQueue(ExtractorQueue):
     def message_ttl(self, message):
         return self.limit_per_batch * 20
 
+    def default_batch_duration(self):
+        return timedelta(seconds = 61)
+
     def nack_message(self, channel, message, handler):
         ExtractorQueue.nack_message(self, channel, message, handler)
         if self.patient_mapping_queue is not None:
@@ -454,6 +477,8 @@ class PatientIDExtractorQueue(ExtractorQueue):
         return message.timestamp
     def message_ttl(self, message):
         return self.limit_per_batch * 20
+    def default_batch_duration(self):
+        return timedelta(minutes = 60)
 
 class WaveSampleQueue(MappingIDExtractorQueue):
     def message_parser(self, db, limit, **kwargs):
