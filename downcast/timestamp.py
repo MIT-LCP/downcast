@@ -118,4 +118,10 @@ class T(datetime):
         """Convert time to UTC and format as a string."""
         return datetime.strftime(self.astimezone(timezone.utc), fmt)
 
+def delta_ms(time_a, time_b):
+    """Compute the difference between two timestamps in milliseconds."""
+    delta = time_a - time_b
+    return ((delta.days * 86400 + delta.seconds) * 1000
+            + (delta.microseconds // 1000))
+
 very_old_timestamp = T('1800-01-01 00:00:00.000 +00:00')
