@@ -145,7 +145,7 @@ class ArchiveRecord:
         if create:
             os.makedirs(self.path, exist_ok = True)
 
-        self.properties = self._read_state_file('_properties')
+        self.properties = self._read_state_file('_phi_properties')
         self.modified = False
 
     def add_event(self, message):
@@ -172,7 +172,7 @@ class ArchiveRecord:
 
     def flush(self):
         if self.modified:
-            self._write_state_file('_properties', self.properties)
+            self._write_state_file('_phi_properties', self.properties)
             self.dir_sync()
 
     def dir_sync(self):
