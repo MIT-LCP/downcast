@@ -17,6 +17,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from ..messages import NumericValueMessage
+from ..timestamp import delta_ms
 
 class NumericValueHandler:
     def __init__(self, archive):
@@ -36,19 +37,32 @@ class NumericValueHandler:
             # continue processing
             return
 
-        # Look up the corresponding record and add event to the time map
+        # Look up the corresponding record
         record = self.archive.get_record(msg, (ttl <= 0))
         if record is None:
             # Record not yet available - hold message in pending and
             # continue processing
             return
 
+        # Determine the wall clock time of the corresponding waveform
+        # message
+        wtime = record.get_clock_time(msg.sequence_number, (ttl <= 0))
+        if wtime is None and ttl > 0:
+            # Timing information not yet available - hold message in
+            # pending and continue processing
+            return
+        elif wtime is None:
+            # FIXME: add something to indicate that the event
+            # timestamp is not accurate
+            wtime = msg.timestamp
+
         # Open or create a log file
         logfile = record.open_log_file('_numerics')
         self.files.add(logfile)
 
         # Write value to the log file
-        time = msg.sequence_number - record.seqnum0()
+        time = (msg.sequence_number + delta_ms(msg.timestamp, wtime)
+                - record.seqnum0())
         val = msg.value
         logfile.append('%d,%s,%s' % (time, attr.sub_label, val))
         source.ack_message(chn, msg, self)
