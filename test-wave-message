@@ -29,6 +29,7 @@ class TestHandler:
                 self.cur_wave_ids[msg.wave_id] = 1
 
             if msg.sequence_number > self.cur_sequence_number or ttl == 0:
+                source.nack_message(chn, msg, self, replay = True)
                 sys.stdout.write('\nT=%d: ' % self.cur_sequence_number)
                 self.prev_sequence_number = self.cur_sequence_number
                 self.cur_sequence_number = msg.sequence_number
@@ -38,8 +39,8 @@ class TestHandler:
                 sys.stdout.write(' [%d]' % msg.wave_id)
                 source.ack_message(chn, msg, self)
             elif msg.sequence_number < self.cur_sequence_number:
-                print('*** message out of sequence (%d > %d)'
-                      % (msg.sequence_number, self._sequence_number))
+                print('*** message out of sequence (%d < %d)'
+                      % (msg.sequence_number, self.cur_sequence_number))
 
     def flush(self):
         return

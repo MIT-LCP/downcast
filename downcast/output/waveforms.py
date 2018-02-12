@@ -89,6 +89,7 @@ class WaveSampleHandler:
         # remaining data
 
         # Write out buffered data up to flush_time
+        updated = False
         while (info.flushed_time is None or info.flushed_time < flush_time):
             if info.flushed_time is not None:
                 info.signal_buffer.truncate_before(info.flushed_time)
@@ -102,10 +103,14 @@ class WaveSampleHandler:
                 break
             info.write_signals(record, start, end, sigdata)
             info.flushed_time = end
+            updated = True
 
         # If the entire message has now been written, then acknowledge it
         if (info.flushed_time is not None and info.flushed_time >= msg_end):
             source.ack_message(chn, msg, self)
+        # otherwise, check if we are now able to acknowledge older messages
+        elif updated:
+            source.nack_message(chn, msg, self, replay = True)
 
     def flush(self):
         for f in self.files:

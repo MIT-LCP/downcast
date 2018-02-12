@@ -25,7 +25,7 @@ class TestHandler:
             if ttl == 0:
                 self.seqnum = msg.seqnum
 
-            dispatcher.nack_message(channel, msg, self)
+            dispatcher.nack_message(channel, msg, self, replay = True)
             if msg.seqnum == self.seqnum:
                 print("  >> RECEIVED %d: %s" % (msg.seqnum, msg.msgstr))
                 self.seqnum = msg.seqnum + 1

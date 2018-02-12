@@ -155,6 +155,11 @@ class Dispatcher:
         'flush', but acking a message represents a promise that,
         following a subsequent 'flush', the message contents will be
         written to disk.)
+
+        Whenever a message is acknowledged, all pending messages from
+        the same channel (i.e., messages that the handler has
+        previously nacked but not yet acked) will subsequently be
+        re-submitted to this handler.
         """
         if handler not in self.handlers:
             self._log_warning('ack from an unknown handler',
@@ -173,7 +178,7 @@ class Dispatcher:
                 self._delete_message(channel, msg)
                 self._source_ack_message(s, channel, msg)
 
-    def nack_message(self, channel, msg, handler):
+    def nack_message(self, channel, msg, handler, replay = False):
         """Defer processing of a message.
 
         This should only be called by message handlers, and only for
@@ -186,6 +191,12 @@ class Dispatcher:
         processes messages immediately.  However, either this or
         'ack_message' must be called at least once if the handler
         intends to use the message in the future.
+
+        If the optional argument replay is true, then all pending
+        messages from this channel will subsequently be re-submitted
+        to this handler.  This is appropriate if the processing of
+        earlier messages depends on later messages in the same channel
+        (for example, waveforms.)
         """
         if handler not in self.handlers:
             self._log_warning('nack from an unknown handler',
@@ -194,7 +205,7 @@ class Dispatcher:
             self._log_warning('nack for an unknown message',
                               handler = handler, msg = msg)
         else:
-            self._message_add_handler(channel, msg, handler)
+            self._message_add_handler(channel, msg, handler, replay)
 
     ################################################################
 
@@ -246,19 +257,20 @@ class Dispatcher:
         else:
             return 0
 
-    def _message_add_handler(self, channel, msg, handler):
+    def _message_add_handler(self, channel, msg, handler, replay):
         if self._message_pending(channel, msg):
             self.channels[channel][msg]['claimed'] = True
             if handler not in self.channels[channel][msg]['handlers']:
                 self.channels[channel][msg]['handlers'].add(handler)
-                self.active_handlers.add(handler)
+        if replay:
+            self.active_handlers.add(handler)
 
     def _message_del_handler(self, channel, msg, handler):
         if self._message_pending(channel, msg):
             self.channels[channel][msg]['claimed'] = True
             if handler in self.channels[channel][msg]['handlers']:
                 self.channels[channel][msg]['handlers'].discard(handler)
-                self.active_handlers.add(handler)
+        self.active_handlers.add(handler)
 
     def _message_claimed(self, channel, msg):
         if self._message_pending(channel, msg):
