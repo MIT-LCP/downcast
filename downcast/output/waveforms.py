@@ -224,8 +224,9 @@ class WaveOutputInfo:
         self.segment_end = start
 
     def write_signals(self, record, start, end, sigdata):
-        # FIXME: we don't want to sort by WaveAttr specifically
-        signals = sorted(sigdata)
+        signals = sorted(sigdata, key = lambda a: (a.channel,
+                                                   a.base_physio_id,
+                                                   a.physio_id, a))
 
         if (signals != self.segment_signals
                 or self.segment_end is None
