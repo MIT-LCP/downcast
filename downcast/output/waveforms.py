@@ -68,6 +68,12 @@ class WaveSampleHandler:
         msg_start -= msg_start % tps
         msg_end = msg_start + nsamples * tps
 
+        # If we have already flushed past the end of this message,
+        # nothing to do
+        if info.flushed_time is not None and msg_end < info.flushed_time:
+            source.ack_message(chn, msg, self)
+            return
+
         # Add signal data to the buffer
         for (vstart, vend) in _valid_sample_intervals(msg):
             t0 = msg_start + vstart * tps
