@@ -168,6 +168,52 @@ _ffreq = 62.5
 _tpf = int(round(1000 / _ffreq))
 _fmt = 16
 
+def _sanitize_desc(desc):
+    s = ''
+    for c in desc:
+        if ord(c) >= 32 and ord(c) < 127:
+            s += c
+        elif c == '₂':
+            s += '2'
+        elif c == 'Δ':
+            s += 'Delta'
+        else:
+            s += '_'
+    return s
+
+def _sanitize_units(units):
+    s = ''
+    for c in units:
+        if ord(c) > 32 and ord(c) < 127:
+            s += c
+        elif c == '°':
+            s += 'deg'
+        else:
+            s += '_'
+    return s
+
+def _get_signal_units_desc(attr):
+    units = desc = None
+    if attr.unit_label == '':
+        units = 'NU'
+    elif attr.unit_label is not None:
+        units = _sanitize_units(attr.unit_label)
+    if attr.label is not None and attr.label != '':
+        desc = _sanitize_desc(attr.label)
+    if attr.base_physio_id == 131328:
+        units = (units or 'mV')
+        desc = (desc or ('ECG #%d' % attr.physio_id))
+    elif attr.base_physio_id == 150016:
+        units = (units or 'mmHg')
+        desc = (desc or ('Pressure #%d' % attr.physio_id))
+    elif attr.base_physio_id == 150452:
+        units = (units or 'NU')
+        desc = (desc or ('Pleth #%d' % attr.physio_id))
+    else:
+        units = (units or 'unknown')
+        desc = (desc or '#%d/%d' % (attr.base_physio_id, attr.physio_id))
+    return (units, desc)
+
 class WaveOutputInfo:
     def __init__(self):
         self.signal_buffer = SignalBuffer()
@@ -205,16 +251,37 @@ class WaveOutputInfo:
             hf.write('%s %d %g/1000(%d)\n'
                      % (segname, len(signals), _ffreq, start))
             for signal in signals:
+                (units, desc) = _get_signal_units_desc(signal)
+
                 spf = -(-_tpf // signal.sample_period) # XXX
-                gain = 200     # XXX
-                baseline = 0   # XXX
-                units = signal.unit_label # XXX
-                adcres = 16    # XXX
-                adczero = 0
-                desc = signal.label # XXX
+
+                csl = signal.calibration_scaled_lower
+                csu = signal.calibration_scaled_upper
+                cal = signal.calibration_abs_lower
+                cau = signal.calibration_abs_upper
+                if (csl != csu and cal != cau and csl and csu and cal and cau):
+                    gain = (csu - csl) / (cau - cal)
+                    baseline = csl - cal * gain
+                else:
+                    gain = 1
+                    baseline = 0
+
+                sl = signal.scale_lower
+                su = signal.scale_upper
+                if sl and su:
+                    d = su - sl
+                    adcres = 0
+                    while d > 0:
+                        d = d // 2
+                        adcres += 1
+                    adczero = (su + sl) // 2
+                else:
+                    adcres = adczero = 0
+
                 hf.write('%s %dx%d %g(%d)/%s %d %d 0 0 0 %s\n'
                          % (datname, _fmt, spf, gain, baseline,
                             units, adcres, adczero, desc))
+
                 self.frame_offset[signal] = self.frame_size
                 self.frame_size += spf
 
