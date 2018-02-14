@@ -23,6 +23,7 @@ import os
 import hashlib
 import logging
 import sys
+import time
 
 from .dispatcher import Dispatcher
 from .parser import (WaveSampleParser, NumericValueParser,
@@ -33,7 +34,7 @@ from .parser import (WaveSampleParser, NumericValueParser,
 from .timestamp import (T, very_old_timestamp)
 
 class Extractor:
-    def __init__(self, db, dest_dir, fatal_exceptions = False):
+    def __init__(self, db, dest_dir, fatal_exceptions = False, debug = False):
         self.db = db
         self.dest_dir = dest_dir
         self.queues = []
@@ -44,6 +45,7 @@ class Extractor:
         if dest_dir is not None:
             os.makedirs(dest_dir, exist_ok = True)
         self.dispatcher.add_dead_letter_handler(DefaultDeadLetterHandler())
+        self.debug = debug
 
     def add_queue(self, queue):
         """Add an input queue."""
@@ -131,7 +133,27 @@ class Extractor:
 
     def _run_queries(self, queue, cursor):
         parser = queue.next_message_parser(self.db)
+
+        if self.debug:
+            dbg_start = getattr(queue, 'newest_seen_timestamp', None)
+            dbg_duration = getattr(queue, 'last_batch_duration', None)
+            if dbg_duration:
+                dbg_duration = dbg_duration.total_seconds()
+            dbg_clock_start = time.monotonic()
+            sys.stderr.write('%s %s+%s'
+                             % (type(queue).__name__,
+                                dbg_start, dbg_duration))
+            j = 0
+
         for msg in self.db.get_messages(parser, cursor = cursor):
+            if self.debug:
+                if j > 0:
+                    j -= 1
+                else:
+                    sys.stderr.write('.')
+                    sys.stderr.flush()
+                    j = 16
+
             ts = queue.message_timestamp(msg)
 
             # FIXME: should disregard timestamps that are
@@ -150,14 +172,34 @@ class Extractor:
 
             queue.push_message(msg, self.dispatcher)
 
+        if self.debug:
+            dbg_clock_elapsed = time.monotonic() - dbg_clock_start
+            dbg_newest = getattr(queue, 'last_batch_count_at_newest', None)
+            dbg_total = getattr(queue, 'last_batch_count', None)
+            dbg_limit = getattr(queue, 'last_batch_limit', None)
+            dbg_end = getattr(queue, 'newest_seen_timestamp', None)
+            if dbg_start and dbg_end:
+                dbg_advance = (dbg_end - dbg_start).total_seconds()
+                dbg_rate = dbg_advance / dbg_clock_elapsed
+            else:
+                dbg_advance = 0
+                dbg_rate = 0
+            sys.stderr.write('(%s/%s/%s) +%s %.2gx'
+                             % (dbg_newest, dbg_total, dbg_limit,
+                                dbg_advance, dbg_rate))
+
         # If this queue has reached the present time, put it to
         # sleep for some minimum time period before hitting it
         # again.  The delay time is dependent on the queue type.
         if queue.reached_present():
+            if self.debug:
+                sys.stderr.write('(done)\n')
             queue.query_time = self.current_timestamp
             self.queue_timestamp[queue] = (self.current_timestamp
                                            + queue.idle_delay())
         else:
+            if self.debug:
+                sys.stderr.write('\n')
             self.queue_timestamp[queue] = queue.query_time
 
     def _update_current_time(self, cursor):
