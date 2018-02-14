@@ -50,6 +50,7 @@ class Dispatcher:
         self.message_counter = 0
         self.dead_letter_handlers = []
         self.active_handlers = set()
+        self.replay_handlers = set()
         self.fatal_exceptions = fatal_exceptions
 
     def add_handler(self, handler):
@@ -84,6 +85,7 @@ class Dispatcher:
         self._insert_message(channel, msg, source, ttl)
 
         self.active_handlers = set()
+        self.replay_handlers = set()
 
         # Submit the new message to every handler.
         for h in self.handlers:
@@ -212,105 +214,101 @@ class Dispatcher:
     def _insert_message(self, channel, msg, source, ttl):
         if channel not in self.channels:
             self.channels[channel] = OrderedDict()
-        self.channels[channel][msg] = {
-            # Source of the message, so we can ack it when we're done
-            'source': source,
 
-            # "Time" when the message is due to expire
-            'expires': (self.message_counter + ttl),
-
-            # Set of handlers that have nacked the message
-            'handlers': set(),
-
-            # Set of handlers that have thrown an error on this message
-            'crashed_handlers': set(),
-
-            # Set when all handlers have seen the message
-            'submitted': False,
-
-            # Set when any handler has acked/nacked the message
-            'claimed': False
-        }
-        self.all_messages[channel, msg] = 1
+        expires = self.message_counter + ttl
+        mi = DispatcherMessageInfo(source, expires)
+        self.channels[channel][msg] = mi
+        self.all_messages[channel, msg] = mi
         self.message_counter += 1
 
     def _delete_message(self, channel, msg):
-        if channel in self.channels and msg in self.channels[channel]:
-            del self.channels[channel][msg]
-        if channel in self.channels and len(self.channels[channel]) == 0:
-            del self.channels[channel]
-        if (channel, msg) in self.all_messages:
-            del self.all_messages[channel, msg]
+        c = self.channels.get(channel, None)
+        if c:
+            c.pop(msg, None)
+            if len(c) == 0:
+                del self.channels[channel]
+        self.all_messages.pop((channel, msg), None)
 
     def _message_pending(self, channel, msg):
-        return (channel in self.channels and msg in self.channels[channel])
+        c = self.channels.get(channel, None)
+        if c:
+            return c.get(msg, None)
 
     def _message_handlers(self, channel, msg):
-        for h in self.handlers:
-            if self._message_pending(channel, msg):
-                if h in self.channels[channel][msg]['handlers']:
+        c = self.channels.get(channel, None)
+        if c:
+            for h in self.handlers:
+                mi = c.get(msg, None)
+                if mi and h in mi.handlers:
                     yield h
 
     def _message_n_handlers(self, channel, msg):
-        if self._message_pending(channel, msg):
-            return len(self.channels[channel][msg]['handlers'])
+        mi = self._message_pending(channel, msg)
+        if mi:
+            return len(mi.handlers)
         else:
             return 0
 
     def _message_add_handler(self, channel, msg, handler, replay):
-        if self._message_pending(channel, msg):
-            self.channels[channel][msg]['claimed'] = True
-            if handler not in self.channels[channel][msg]['handlers']:
-                self.channels[channel][msg]['handlers'].add(handler)
+        mi = self._message_pending(channel, msg)
+        if mi:
+            mi.claimed = True
+            if handler not in mi.handlers:
+                self.active_handlers.add(handler)
+            mi.handlers.add(handler)
         if replay:
-            self.active_handlers.add(handler)
+            self.replay_handlers.add(handler)
 
     def _message_del_handler(self, channel, msg, handler):
-        if self._message_pending(channel, msg):
-            self.channels[channel][msg]['claimed'] = True
-            if handler in self.channels[channel][msg]['handlers']:
-                self.channels[channel][msg]['handlers'].discard(handler)
-        self.active_handlers.add(handler)
+        mi = self._message_pending(channel, msg)
+        if mi:
+            mi.claimed = True
+            if handler in mi.handlers:
+                self.active_handlers.add(handler)
+            mi.handlers.discard(handler)
+        self.replay_handlers.add(handler)
 
     def _message_claimed(self, channel, msg):
-        if self._message_pending(channel, msg):
-            return self.channels[channel][msg]['claimed']
-        else:
-            return False
+        mi = self._message_pending(channel, msg)
+        return (mi and mi.claimed)
 
     def _message_submitted(self, channel, msg):
-        if self._message_pending(channel, msg):
-            return self.channels[channel][msg]['submitted']
-        else:
-            return False
+        mi = self._message_pending(channel, msg)
+        return (mi and mi.submitted)
 
     def _mark_submitted(self, channel, msg):
-        if self._message_pending(channel, msg):
-            self.channels[channel][msg]['submitted'] = True
+        mi = self._message_pending(channel, msg)
+        if mi:
+            mi.submitted = True
 
     def _message_ttl(self, channel, msg):
-        if self._message_pending(channel, msg):
-            return (self.channels[channel][msg]['expires']
-                    - self.message_counter)
+        mi = self._message_pending(channel, msg)
+        if mi:
+            return (mi.expires - self.message_counter)
         else:
             return 999999
 
     def _message_source(self, channel, msg):
-        if self._message_pending(channel, msg):
-            return self.channels[channel][msg]['source']
+        mi = self._message_pending(channel, msg)
+        if mi:
+            return mi.source
         else:
             return None
 
     def _replay_pending(self, channel):
-        while channel in self.channels and len(self.active_handlers) > 0:
-            active = self.active_handlers
+        while len(self.active_handlers) > 0:
+            active = self.active_handlers & self.replay_handlers
             self.active_handlers = set()
+            self.replay_handlers = set()
 
+            c = self.channels.get(channel, None)
+            if not c:
+                return
             # The use of copy(), and the fact that we iterate over all
             # messages here, may be suboptimal.  Try to avoid making
             # this a problem by ensuring that we never keep a huge
             # number of pending messages in any given channel.
-            for m in self.channels[channel].copy():
+            for m in c.copy():
                 for h in self._message_handlers(channel, m):
                     if h in active:
                         ttl = self._message_ttl(channel, m)
@@ -396,12 +394,11 @@ class Dispatcher:
     def _log_exception_once(self, handler, channel, msg, text, exc):
         if self.fatal_exceptions:
             raise exc
-        if self._message_pending(channel, msg):
-            minfo = self.channels[channel][msg]
-            if handler not in minfo['crashed_handlers']:
-                minfo['crashed_handlers'].add(handler)
-                logging.exception('%s [%s]:' % (type(handler).__name__,
-                                                type(msg).__name__))
+        mi = self._message_pending(channel, msg)
+        if mi and handler not in mi.crashed_handlers:
+            mi.crashed_handlers.add(handler)
+            logging.exception('%s [%s]:' % (type(handler).__name__,
+                                            type(msg).__name__))
 
     def _log_warning(self, text, handler = None, msg = None):
         if handler is None and msg is None:
@@ -413,3 +410,12 @@ class Dispatcher:
         else:
             logging.warning('%s [%s]: %s' % (type(handler).__name__,
                                              type(msg).__name__, text))
+
+class DispatcherMessageInfo:
+    def __init__(self, source, expires):
+        self.source = source
+        self.expires = expires
+        self.handlers = set()
+        self.crashed_handlers = set()
+        self.submitted = False
+        self.claimed = False
