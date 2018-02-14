@@ -212,7 +212,7 @@ class Extractor:
 
 class ExtractorQueue:
     def __init__(self, queue_name, start_time = None, end_time = None,
-                 messages_per_batch = 1000):
+                 messages_per_batch = 10000):
         self.queue_name = queue_name
         self.newest_seen_timestamp = start_time
         self.oldest_unacked_timestamp = start_time
@@ -478,7 +478,7 @@ class MappingIDExtractorQueue(ExtractorQueue):
         return self.limit_per_batch * 20
 
     def default_batch_duration(self):
-        return timedelta(seconds = 61)
+        return timedelta(seconds = 11)
 
     def nack_message(self, channel, message, handler):
         ExtractorQueue.nack_message(self, channel, message, handler)
