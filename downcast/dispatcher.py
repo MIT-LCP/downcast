@@ -80,7 +80,7 @@ class Dispatcher:
 
         chn = self.channels.get(channel, None)
         if chn is None:
-            chn = DispatcherChannelInfo(channel)
+            chn = DispatcherChannel(self, channel)
             self.channels[channel] = chn
         channel = chn
 
@@ -151,7 +151,7 @@ class Dispatcher:
 
     ################################################################
 
-    def ack_message(self, channel, msg, handler):
+    def _ack_message(self, channel, msg, handler):
         """Acknowledge a message.
 
         This should only be called by message handlers, and only for
@@ -186,7 +186,7 @@ class Dispatcher:
                 self._delete_message(channel, msg)
                 self._source_ack_message(s, channel, msg)
 
-    def nack_message(self, channel, msg, handler, replay = False):
+    def _nack_message(self, channel, msg, handler, replay):
         """Defer processing of a message.
 
         This should only be called by message handlers, and only for
@@ -364,7 +364,7 @@ class Dispatcher:
 
     def _handler_send_message(self, handler, channel, msg, ttl):
         try:
-            handler.send_message(channel, msg, self, ttl)
+            handler.send_message(channel.channel_id, msg, channel, ttl)
         except (OSError, MemoryError, ImportError, SyntaxError, SystemError):
             raise
         except Exception as e:
@@ -409,10 +409,17 @@ class Dispatcher:
             logging.warning('%s [%s]: %s' % (type(handler).__name__,
                                              type(msg).__name__, text))
 
-class DispatcherChannelInfo:
-    def __init__(self, channel_id):
+class DispatcherChannel:
+    def __init__(self, dispatcher, channel_id):
+        self.dispatcher = dispatcher
         self.channel_id = channel_id
         self.messages = OrderedDict()
+
+    def ack_message(self, channel, msg, handler):
+        self.dispatcher._ack_message(self, msg, handler)
+
+    def nack_message(self, channel, msg, handler, replay = False):
+        self.dispatcher._nack_message(self, msg, handler, replay)
 
 class DispatcherMessageInfo:
     def __init__(self, source, expires):
