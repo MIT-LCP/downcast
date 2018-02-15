@@ -78,6 +78,12 @@ class Dispatcher:
         pending messages from the same channel.
         """
 
+        chn = self.channels.get(channel, None)
+        if chn is None:
+            chn = DispatcherChannelInfo(channel)
+            self.channels[channel] = chn
+        channel = chn
+
         if self._message_pending(channel, msg):
             self._log_warning('re-sending a known message', msg = msg)
             return
@@ -212,35 +218,26 @@ class Dispatcher:
     ################################################################
 
     def _insert_message(self, channel, msg, source, ttl):
-        if channel not in self.channels:
-            self.channels[channel] = OrderedDict()
-
         expires = self.message_counter + ttl
         mi = DispatcherMessageInfo(source, expires)
-        self.channels[channel][msg] = mi
+        channel.messages[msg] = mi
         self.all_messages[channel, msg] = mi
         self.message_counter += 1
 
     def _delete_message(self, channel, msg):
-        c = self.channels.get(channel, None)
-        if c:
-            c.pop(msg, None)
-            if len(c) == 0:
-                del self.channels[channel]
+        channel.messages.pop(msg, None)
+        if len(channel.messages) == 0:
+            del self.channels[channel.channel_id]
         self.all_messages.pop((channel, msg), None)
 
     def _message_pending(self, channel, msg):
-        c = self.channels.get(channel, None)
-        if c:
-            return c.get(msg, None)
+        return channel.messages.get(msg, None)
 
     def _message_handlers(self, channel, msg):
-        c = self.channels.get(channel, None)
-        if c:
-            for h in self.handlers:
-                mi = c.get(msg, None)
-                if mi and h in mi.handlers:
-                    yield h
+        for h in self.handlers:
+            mi = channel.messages.get(msg, None)
+            if mi and h in mi.handlers:
+                yield h
 
     def _message_n_handlers(self, channel, msg):
         mi = self._message_pending(channel, msg)
@@ -297,21 +294,22 @@ class Dispatcher:
 
     def _replay_pending(self, channel):
         while len(self.active_handlers) > 0:
-            active = self.active_handlers & self.replay_handlers
+            active = []
+            for h in self.handlers:
+                if h in self.active_handlers and h in self.replay_handlers:
+                    active.append(h)
+
             self.active_handlers = set()
             self.replay_handlers = set()
 
-            c = self.channels.get(channel, None)
-            if not c:
-                return
-            # The use of copy(), and the fact that we iterate over all
+            # The use of list(), and the fact that we iterate over all
             # messages here, may be suboptimal.  Try to avoid making
             # this a problem by ensuring that we never keep a huge
             # number of pending messages in any given channel.
-            for m in c.copy():
-                for h in self._message_handlers(channel, m):
-                    if h in active:
-                        ttl = self._message_ttl(channel, m)
+            for (m, mi) in list(channel.messages.items()):
+                ttl = (mi.expires - self.message_counter)
+                for h in active:
+                    if h in mi.handlers:
                         self._handler_send_message(h, channel, m, ttl)
 
     def _check_expiring(self):
@@ -377,7 +375,7 @@ class Dispatcher:
 
     def _source_ack_message(self, source, channel, msg):
         try:
-            source.ack_message(channel, msg, self)
+            source.ack_message(channel.channel_id, msg, self)
         except (OSError, MemoryError, ImportError, SyntaxError, SystemError):
             raise
         except Exception as e:
@@ -385,7 +383,7 @@ class Dispatcher:
 
     def _source_nack_message(self, source, channel, msg):
         try:
-            source.nack_message(channel, msg, self)
+            source.nack_message(channel.channel_id, msg, self)
         except (OSError, MemoryError, ImportError, SyntaxError, SystemError):
             raise
         except Exception as e:
@@ -410,6 +408,11 @@ class Dispatcher:
         else:
             logging.warning('%s [%s]: %s' % (type(handler).__name__,
                                              type(msg).__name__, text))
+
+class DispatcherChannelInfo:
+    def __init__(self, channel_id):
+        self.channel_id = channel_id
+        self.messages = OrderedDict()
 
 class DispatcherMessageInfo:
     def __init__(self, source, expires):
