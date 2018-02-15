@@ -84,7 +84,7 @@ class Dispatcher:
             self.channels[channel] = chn
         channel = chn
 
-        if self._message_pending(channel, msg):
+        if channel._message_pending(msg):
             self._log_warning('re-sending a known message', msg = msg)
             return
 
@@ -96,15 +96,15 @@ class Dispatcher:
         # Submit the new message to every handler.
         for h in self.handlers:
             self._handler_send_message(h, channel, msg, ttl)
-        self._mark_submitted(channel, msg)
+        channel._mark_submitted(msg)
 
         # Check whether any handlers acked or nacked the message.
-        if self._message_pending(channel, msg):
-            if not self._message_claimed(channel, msg):
+        if channel._message_pending(msg):
+            if not channel._message_claimed(msg):
                 # No handlers were interested.  Drop the message
                 # immediately and send it to the dead letter file.
                 self._expire_message(channel, msg)
-            elif self._message_n_handlers(channel, msg) == 0:
+            elif channel._message_n_handlers(msg) == 0:
                 # All interested handlers acked the message.  Ack it
                 # upstream.
                 self._delete_message(channel, msg)
@@ -173,16 +173,16 @@ class Dispatcher:
             self._log_warning('ack from an unknown handler',
                               handler = handler, msg = msg)
 
-        if not self._message_pending(channel, msg):
+        if not channel._message_pending(msg):
             self._log_warning('ack for an unknown message',
                               handler = handler, msg = msg)
         else:
-            self._message_del_handler(channel, msg, handler)
+            channel._message_del_handler(msg, handler)
 
             # If all handlers have now acked the message, ack it upstream.
-            if (self._message_submitted(channel, msg)
-                    and self._message_n_handlers(channel, msg) == 0):
-                s = self._message_source(channel, msg)
+            if (channel._message_submitted(msg)
+                    and channel._message_n_handlers(msg) == 0):
+                s = channel._message_source(msg)
                 self._delete_message(channel, msg)
                 self._source_ack_message(s, channel, msg)
 
@@ -209,11 +209,11 @@ class Dispatcher:
         if handler not in self.handlers:
             self._log_warning('nack from an unknown handler',
                               handler = handler, msg = msg)
-        elif not self._message_pending(channel, msg):
+        elif not channel._message_pending(msg):
             self._log_warning('nack for an unknown message',
                               handler = handler, msg = msg)
         else:
-            self._message_add_handler(channel, msg, handler, replay)
+            channel._message_add_handler(msg, handler, replay)
 
     ################################################################
 
@@ -229,68 +229,6 @@ class Dispatcher:
         if len(channel.messages) == 0:
             del self.channels[channel.channel_id]
         self.all_messages.pop((channel, msg), None)
-
-    def _message_pending(self, channel, msg):
-        return channel.messages.get(msg, None)
-
-    def _message_handlers(self, channel, msg):
-        for h in self.handlers:
-            mi = channel.messages.get(msg, None)
-            if mi and h in mi.handlers:
-                yield h
-
-    def _message_n_handlers(self, channel, msg):
-        mi = self._message_pending(channel, msg)
-        if mi:
-            return len(mi.handlers)
-        else:
-            return 0
-
-    def _message_add_handler(self, channel, msg, handler, replay):
-        mi = self._message_pending(channel, msg)
-        if mi:
-            mi.claimed = True
-            if handler not in mi.handlers:
-                self.active_handlers.add(handler)
-            mi.handlers.add(handler)
-        if replay:
-            self.replay_handlers.add(handler)
-
-    def _message_del_handler(self, channel, msg, handler):
-        mi = self._message_pending(channel, msg)
-        if mi:
-            mi.claimed = True
-            if handler in mi.handlers:
-                self.active_handlers.add(handler)
-            mi.handlers.discard(handler)
-        self.replay_handlers.add(handler)
-
-    def _message_claimed(self, channel, msg):
-        mi = self._message_pending(channel, msg)
-        return (mi and mi.claimed)
-
-    def _message_submitted(self, channel, msg):
-        mi = self._message_pending(channel, msg)
-        return (mi and mi.submitted)
-
-    def _mark_submitted(self, channel, msg):
-        mi = self._message_pending(channel, msg)
-        if mi:
-            mi.submitted = True
-
-    def _message_ttl(self, channel, msg):
-        mi = self._message_pending(channel, msg)
-        if mi:
-            return (mi.expires - self.message_counter)
-        else:
-            return 999999
-
-    def _message_source(self, channel, msg):
-        mi = self._message_pending(channel, msg)
-        if mi:
-            return mi.source
-        else:
-            return None
 
     def _replay_pending(self, channel):
         while len(self.active_handlers) > 0:
@@ -318,7 +256,7 @@ class Dispatcher:
             # FIXME: this won't work correctly if different messages
             # have different TTLs.  TTL is a bit of a kludge anyway...
             (channel, msg) = next(iter(self.all_messages))
-            ttl = self._message_ttl(channel, msg)
+            ttl = channel._message_ttl(msg)
             if ttl > 0:
                 return
             self.active_handlers = set()
@@ -328,15 +266,15 @@ class Dispatcher:
     def _expire_message(self, channel, msg):
         # Message is about to expire.  Notify all handlers that
         # still have not acked it
-        for h in self._message_handlers(channel, msg):
+        for h in channel._message_handlers(msg):
             self._handler_send_message(h, channel, msg, 0)
 
         # If message still has not been acked, send to dead-letter
         # handlers, delete the message, and ack it upstream.
-        if self._message_pending(channel, msg):
+        if channel._message_pending(msg):
             for h in self.dead_letter_handlers:
                 self._handler_send_message(h, channel, msg, 0)
-            s = self._message_source(channel, msg)
+            s = channel._message_source(msg)
             self._delete_message(channel, msg)
             self._source_ack_message(s, channel, msg)
 
@@ -392,7 +330,7 @@ class Dispatcher:
     def _log_exception_once(self, handler, channel, msg, text, exc):
         if self.fatal_exceptions:
             raise exc
-        mi = self._message_pending(channel, msg)
+        mi = channel._message_pending(msg)
         if mi and handler not in mi.crashed_handlers:
             mi.crashed_handlers.add(handler)
             logging.exception('%s [%s]:' % (type(handler).__name__,
@@ -420,6 +358,70 @@ class DispatcherChannel:
 
     def nack_message(self, channel, msg, handler, replay = False):
         self.dispatcher._nack_message(self, msg, handler, replay)
+
+    ################################################################
+
+    def _message_pending(self, msg):
+        return self.messages.get(msg, None)
+
+    def _message_handlers(self, msg):
+        for h in self.dispatcher.handlers:
+            mi = self.messages.get(msg, None)
+            if mi and h in mi.handlers:
+                yield h
+
+    def _message_n_handlers(self, msg):
+        mi = self._message_pending(msg)
+        if mi:
+            return len(mi.handlers)
+        else:
+            return 0
+
+    def _message_add_handler(self, msg, handler, replay):
+        mi = self._message_pending(msg)
+        if mi:
+            mi.claimed = True
+            if handler not in mi.handlers:
+                self.dispatcher.active_handlers.add(handler)
+            mi.handlers.add(handler)
+        if replay:
+            self.dispatcher.replay_handlers.add(handler)
+
+    def _message_del_handler(self, msg, handler):
+        mi = self._message_pending(msg)
+        if mi:
+            mi.claimed = True
+            if handler in mi.handlers:
+                self.dispatcher.active_handlers.add(handler)
+            mi.handlers.discard(handler)
+        self.dispatcher.replay_handlers.add(handler)
+
+    def _message_claimed(self, msg):
+        mi = self._message_pending(msg)
+        return (mi and mi.claimed)
+
+    def _message_submitted(self, msg):
+        mi = self._message_pending(msg)
+        return (mi and mi.submitted)
+
+    def _mark_submitted(self, msg):
+        mi = self._message_pending(msg)
+        if mi:
+            mi.submitted = True
+
+    def _message_ttl(self, msg):
+        mi = self._message_pending(msg)
+        if mi:
+            return (mi.expires - self.dispatcher.message_counter)
+        else:
+            return 999999
+
+    def _message_source(self, msg):
+        mi = self._message_pending(msg)
+        if mi:
+            return mi.source
+        else:
+            return None
 
 class DispatcherMessageInfo:
     def __init__(self, source, expires):
