@@ -153,8 +153,8 @@ class DWCDB:
     def get_patient_id(self, mapping_id, sync):
         if mapping_id in self.patient_map:
             return self.patient_map[mapping_id]
-        if not sync:
-            return None
+        # if not sync:
+        #     return None
 
         p = PatientMappingParser(dialect = self.dialect,
                                  paramstyle = self.paramstyle,
