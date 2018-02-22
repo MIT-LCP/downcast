@@ -471,7 +471,7 @@ class MappingIDExtractorQueue(ExtractorQueue):
         self.unstalled_ids = set()
 
     def message_channel(self, message):
-        return ('M', message.mapping_id)
+        return message.origin.get_patient_id(message.mapping_id, True)
     def message_timestamp(self, message):
         return message.timestamp
     def message_ttl(self, message):
@@ -516,7 +516,7 @@ class PatientIDExtractorQueue(ExtractorQueue):
         ExtractorQueue.__init__(self, queue_name, **kwargs)
         self.patient_id = patient_id
     def message_channel(self, message):
-        return ('P', message.patient_id)
+        return message.patient_id
     def message_timestamp(self, message):
         return message.timestamp
     def message_ttl(self, message):
@@ -575,6 +575,9 @@ class PatientMappingQueue(MappingIDExtractorQueue):
                                     mapping_id = self.mapping_id,
                                     limit = limit,
                                     **kwargs)
+    def message_channel(self, message):
+        message.origin.set_patient_id(message.mapping_id, message.patient_id)
+        return message.patient_id
     def bias(self):
         return timedelta(minutes = -8)
     def idle_delay(self):
