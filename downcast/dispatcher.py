@@ -96,15 +96,16 @@ class Dispatcher:
         # Submit the new message to every handler.
         for h in self.handlers:
             self._handler_send_message(h, channel, msg, ttl)
-        channel._mark_submitted(msg)
 
         # Check whether any handlers acked or nacked the message.
-        if channel._message_pending(msg):
-            if not channel._message_claimed(msg):
+        mi = channel._message_pending(msg)
+        if mi is not None:
+            mi.submitted = True
+            if not mi.claimed:
                 # No handlers were interested.  Drop the message
                 # immediately and send it to the dead letter file.
                 self._expire_message(channel, msg)
-            elif channel._message_n_handlers(msg) == 0:
+            elif len(mi.handlers) == 0:
                 # All interested handlers acked the message.  Ack it
                 # upstream.
                 self._delete_message(channel, msg)
