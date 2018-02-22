@@ -200,7 +200,7 @@ class Extractor:
         else:
             if self.debug:
                 sys.stderr.write('\n')
-            self.queue_timestamp[queue] = queue.query_time
+            self.queue_timestamp[queue] = (queue.query_time + queue.bias())
 
     def _update_current_time(self, cursor):
         for queue in self.queues:
@@ -479,6 +479,8 @@ class MappingIDExtractorQueue(ExtractorQueue):
 
     def default_batch_duration(self):
         return timedelta(seconds = 11)
+    def bias(self):
+        return timedelta(0)
 
     def nack_message(self, channel, message, handler):
         ExtractorQueue.nack_message(self, channel, message, handler)
@@ -521,6 +523,8 @@ class PatientIDExtractorQueue(ExtractorQueue):
         return self.limit_per_batch * 20
     def default_batch_duration(self):
         return timedelta(minutes = 60)
+    def bias(self):
+        return timedelta(0)
 
 class WaveSampleQueue(MappingIDExtractorQueue):
     def message_parser(self, db, limit, **kwargs):
@@ -529,6 +533,8 @@ class WaveSampleQueue(MappingIDExtractorQueue):
                                 mapping_id = self.mapping_id,
                                 limit = limit,
                                 **kwargs)
+    def bias(self):
+        return timedelta(seconds = -30)
     def idle_delay(self):
         return timedelta(milliseconds = 500)
 
@@ -569,6 +575,8 @@ class PatientMappingQueue(MappingIDExtractorQueue):
                                     mapping_id = self.mapping_id,
                                     limit = limit,
                                     **kwargs)
+    def bias(self):
+        return timedelta(minutes = -8)
     def idle_delay(self):
         return timedelta(minutes = 5)
 
