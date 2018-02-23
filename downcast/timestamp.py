@@ -38,7 +38,7 @@ class T(datetime):
                           '(\d+):(\d+):(\d+)(\.\d+)\s*' +
                           '([-+])(\d+):(\d+)\Z', re.ASCII)
 
-    def __new__(cls, val):
+    def __new__(cls, val, _tz = None):
         if isinstance(val, datetime):
             tz = val.tzinfo
             if tz is None:
@@ -53,6 +53,8 @@ class T(datetime):
                 second = val.second,
                 microsecond = val.microsecond,
                 tzinfo = tz)
+        elif isinstance(val, bytes) and isinstance(_tz, timezone):
+            return datetime.__new__(cls, val, _tz)
 
         m = T._pattern.match(val)
         if m is None:
