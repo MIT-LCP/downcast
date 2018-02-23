@@ -25,7 +25,7 @@ import logging
 import sys
 import time
 
-from .dispatcher import Dispatcher
+from .subprocess import ParallelDispatcher
 from .parser import (WaveSampleParser, NumericValueParser,
                      EnumerationValueParser, AlertParser,
                      PatientMappingParser, PatientBasicInfoParser,
@@ -38,7 +38,8 @@ class Extractor:
         self.db = db
         self.dest_dir = dest_dir
         self.queues = []
-        self.dispatcher = Dispatcher(fatal_exceptions = fatal_exceptions)
+        self.dispatcher = ParallelDispatcher(
+            8, fatal_exceptions = fatal_exceptions)
         self.conn = db.connect()
         self.current_timestamp = very_old_timestamp
         self.queue_timestamp = OrderedDict()
