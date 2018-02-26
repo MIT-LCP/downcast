@@ -429,10 +429,17 @@ class ExtractorQueue:
 
         if tsinfo.unacked or len(self.timestamp_info) <= 1:
             return
+
+        for msginfo in tsinfo.seen:
+            self.message_info.pop(msginfo.message, None)
+        tsinfo.seen = None
         self.timestamp_info.popleft()
         tsinfo = self.timestamp_info[0]
 
         while (not tsinfo.unacked and len(self.timestamp_info) > 1):
+            for msginfo in tsinfo.seen:
+                self.message_info.pop(msginfo.message, None)
+            tsinfo.seen = None
             self.timestamp_info.popleft()
             tsinfo = self.timestamp_info[0]
 
