@@ -41,7 +41,7 @@ class ParallelDispatcher:
     API of the Dispatcher class.
     """
 
-    def __init__(self, n_children, pending_limit = 50, **kwargs):
+    def __init__(self, n_children, pending_limit = 200, **kwargs):
         self.n_children = n_children
         self.pending_limit = pending_limit
         self.children = None
