@@ -179,15 +179,16 @@ class Extractor:
             dbg_total = getattr(queue, 'last_batch_count', None)
             dbg_limit = getattr(queue, 'last_batch_limit', None)
             dbg_end = getattr(queue, 'newest_seen_timestamp', None)
+            dbg_mlist = getattr(queue, 'message_info', {})
             if dbg_start and dbg_end:
                 dbg_advance = (dbg_end - dbg_start).total_seconds()
                 dbg_rate = dbg_advance / dbg_clock_elapsed
             else:
                 dbg_advance = 0
                 dbg_rate = 0
-            sys.stderr.write('(%s/%s/%s) +%s %.2gx'
+            sys.stderr.write('(%s/%s/%s) {%d} +%s %.2gx'
                              % (dbg_newest, dbg_total, dbg_limit,
-                                dbg_advance, dbg_rate))
+                                len(dbg_mlist), dbg_advance, dbg_rate))
 
         # If this queue has reached the present time, put it to
         # sleep for some minimum time period before hitting it
