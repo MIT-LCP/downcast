@@ -272,7 +272,7 @@ class ExtractorQueue:
                     data['acked'][tsstr].append(msgstr)
             for tsinfo in self.timestamp_info:
                 tsstr = str(tsinfo.timestamp)
-                for msginfo in (tsinfo.seen - tsinfo.unacked):
+                for msginfo in tsinfo.acked:
                     msg = msginfo.message
                     if tsstr not in data['acked']:
                         data['acked'][tsstr] = []
@@ -361,18 +361,9 @@ class ExtractorQueue:
         ttl = self.message_ttl(message)
         self.last_batch_count += 1
 
-        msginfo = MessageInfo(channel, message)
-        msginfo = self.message_info.setdefault(message, msginfo)
-
         if ts == self.newest_seen_timestamp:
             self.last_batch_count_at_newest += 1
             tsinfo = self.timestamp_info[-1]
-
-            # Check if this message has already been seen (acked or
-            # otherwise)
-            if msginfo in tsinfo.seen:
-                return
-
         elif (self.newest_seen_timestamp is None
               or ts > self.newest_seen_timestamp):
             self.newest_seen_timestamp = ts
@@ -387,7 +378,12 @@ class ExtractorQueue:
             self._log_warning('Unexpected message at %s; ignored' % ts)
             return
 
-        msginfo.timestamp = tsinfo
+        # If message has not been seen previously, add it to
+        # message_info; if it has been seen, ignore it
+        newinfo = MessageInfo(message, tsinfo)
+        msginfo = self.message_info.setdefault(message, newinfo)
+        if msginfo is not newinfo:
+            return
 
         # Check if the message was acked in a previous run.
         # Generating _message_hash(message) may be expensive so don't
@@ -400,10 +396,9 @@ class ExtractorQueue:
                     aold.discard(mstr)
                     if len(aold) == 0:
                         del self.acked_saved[ts]
-                    tsinfo.seen.add(msginfo)
+                    tsinfo.acked.append(msginfo)
                     return
 
-        tsinfo.seen.add(msginfo)
         tsinfo.unacked.add(msginfo)
         dispatcher.send_message(channel, message, self, ttl)
 
@@ -415,6 +410,7 @@ class ExtractorQueue:
             msginfo = self.message_info[message]
             tsinfo = msginfo.timestamp
             tsinfo.unacked.remove(msginfo)
+            tsinfo.acked.append(msginfo)
         except KeyError:
             self._log_warning('ack for an unknown message')
         self._update_pointer()
@@ -431,16 +427,16 @@ class ExtractorQueue:
         if tsinfo.unacked or len(self.timestamp_info) <= 1:
             return
 
-        for msginfo in tsinfo.seen:
+        for msginfo in tsinfo.acked:
             self.message_info.pop(msginfo.message, None)
-        tsinfo.seen = None
+        tsinfo.acked = None
         self.timestamp_info.popleft()
         tsinfo = self.timestamp_info[0]
 
         while (not tsinfo.unacked and len(self.timestamp_info) > 1):
-            for msginfo in tsinfo.seen:
+            for msginfo in tsinfo.acked:
                 self.message_info.pop(msginfo.message, None)
-            tsinfo.seen = None
+            tsinfo.acked = None
             self.timestamp_info.popleft()
             tsinfo = self.timestamp_info[0]
 
@@ -467,13 +463,12 @@ class TimestampInfo:
     def __init__(self, timestamp):
         self.timestamp = timestamp
         self.unacked = set()
-        self.seen = set()
+        self.acked = []
 
 class MessageInfo:
-    def __init__(self, channel, message):
-        self.channel = channel
+    def __init__(self, message, timestamp):
         self.message = message
-        self.timestamp = None
+        self.timestamp = timestamp
 
 class DefaultDeadLetterHandler:
     def send_message(self, channel, message, dispatcher, ttl):
