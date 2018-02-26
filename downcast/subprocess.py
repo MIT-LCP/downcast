@@ -120,7 +120,7 @@ class ChildConnector:
 
     def __init__(self, handler, pending_limit = 50, name = None):
         self.pending_limit = pending_limit
-        self.pending = []
+        self.pending_count = pending_limit
         self.messages = {}
         self.message_id = 0
 
@@ -172,10 +172,10 @@ class ChildConnector:
         self._async_request((msgid, channel, message, ttl))
 
     def _async_request(self, request):
-        if len(self.pending) >= self.pending_limit:
+        if self.pending_count <= 0:
             self._sync_response()
         self.parent_pipe.send(request)
-        self.pending.append(request)
+        self.pending_count -= 1
 
     def _sync_response(self):
         self.parent_pipe.send(ChildRequest.SYNC_RESPONSE)
@@ -189,10 +189,12 @@ class ChildConnector:
                 source.ack_message(channel, message, self)
         if exc is not None:
             if isinstance(exc, BorkedPickleException):
-                obj = self.pending[exc.index]
-                exc = TypeError('failed to send/recv %r' % (obj,))
+                m = self.messages.get(exc.last_seen_msgid + 1, (None, None))
+                desc = ('Failed to send/receive a message;' +
+                        ' pending channel=%r, message=%r') % (m[0], m[1])
+                exc = TypeError(desc)
             raise exc from Exception(exc_msg)
-        self.pending = []
+        self.pending_count = self.pending_limit
 
 class ChildContext:
     def __init__(self, handler):
@@ -213,7 +215,7 @@ class ChildContext:
 
     def _main1(self):
         try:
-            counter = 0
+            msgid = 0
             while True:
                 try:
                     req = self.pipe.recv()
@@ -222,8 +224,23 @@ class ChildContext:
                 except (OSError, MemoryError):
                     raise
                 except Exception as e:
-                    raise BorkedPickleException(counter) from e
-                counter += 1
+                    # We assume that all other exceptions that occur
+                    # here result from an error in the process of
+                    # unpickling the message (or, potentially, the
+                    # channel.)  Such exceptions can occur even
+                    # without raising an exception on the sender side,
+                    # and the resulting error message is generally
+                    # unhelpful in the extreme.  Thus, we send back an
+                    # exception that indicates the *last message ID
+                    # that we were able to decode*; the sender, upon
+                    # receiving such an exception, can identify the
+                    # message that was (probably) the cause of the
+                    # exception.
+                    #
+                    # (We assume that there are never problems with
+                    # pickling/unpickling ChildRequests, nor 'msgid'
+                    # or 'ttl' values.)
+                    raise BorkedPickleException(msgid) from e
 
                 if isinstance(req, tuple):
                     (msgid, channel, message, ttl) = req
@@ -247,6 +264,10 @@ class ChildContext:
                     req = self.pipe.recv()
                 except EOFError:
                     return
+                except (OSError, MemoryError):
+                    raise
+                except Exception:
+                    req = None
                 if req is ChildRequest.SYNC_RESPONSE:
                     resp = (self.acks, exc, exc_msg)
                     self.acks = []
@@ -271,5 +292,5 @@ class ChildRequest(Enum):
     EXIT = 3
 
 class BorkedPickleException(Exception):
-    def __init__(self, index):
-        self.index = index
+    def __init__(self, last_seen_msgid):
+        self.last_seen_msgid = last_seen_msgid
