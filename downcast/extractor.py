@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from datetime import timedelta
 import json
 import os
@@ -218,9 +218,12 @@ class ExtractorQueue:
         self.newest_seen_timestamp = start_time
         self.oldest_unacked_timestamp = start_time
         self.end_time = end_time
+        self.message_info = {}
+        self.timestamp_info = deque()
+        if start_time is not None:
+            self.timestamp_info.append(TimestampInfo(start_time))
+
         self.acked_saved = {}
-        self.acked_new = OrderedDict()
-        self.unacked_new = OrderedDict()
         self.limit_per_batch = messages_per_batch
         self.last_batch_count_at_newest = 0
         self.last_batch_limit = 0
@@ -236,10 +239,14 @@ class ExtractorQueue:
                 data = json.load(f)
         except FileNotFoundError:
             return
+        self.message_info = {}
+        self.timestamp_info = deque()
         try:
             ts = T(data['time'])
             self.newest_seen_timestamp = ts
             self.oldest_unacked_timestamp = ts
+            if ts is not None:
+                self.timestamp_info.append(TimestampInfo(ts))
         except KeyError:
             return
         self.acked_saved = {}
@@ -262,9 +269,10 @@ class ExtractorQueue:
                     if tsstr not in data['acked']:
                         data['acked'][tsstr] = []
                     data['acked'][tsstr].append(msgstr)
-            for (ts, cmsgs) in self.acked_new.items():
-                tsstr = str(ts)
-                for (chn, msg) in cmsgs:
+            for tsinfo in self.timestamp_info:
+                tsstr = str(tsinfo.timestamp)
+                for msginfo in (tsinfo.seen - tsinfo.unacked):
+                    msg = msginfo.message
                     if tsstr not in data['acked']:
                         data['acked'][tsstr] = []
                     data['acked'][tsstr].append(self._message_hash(msg))
@@ -352,89 +360,83 @@ class ExtractorQueue:
         ttl = self.message_ttl(message)
         self.last_batch_count += 1
 
-        if self.newest_seen_timestamp is not None:
-            if ts < self.newest_seen_timestamp:
-                # FIXME: in case of bad weirdness, maybe what we want
-                # here is to send the message immediately, with ttl of
-                # zero (and dispatcher could recognize that case
-                # specifically.)
-                self._log_warning('Unexpected message at %s; ignored' % ts)
-                return
+        msginfo = MessageInfo(channel, message)
+        msginfo = self.message_info.setdefault(message, msginfo)
 
         if ts == self.newest_seen_timestamp:
             self.last_batch_count_at_newest += 1
-        else:
+            tsinfo = self.timestamp_info[-1]
+
+            # Check if this message has already been seen (acked or
+            # otherwise)
+            if msginfo in tsinfo.seen:
+                return
+
+        elif (self.newest_seen_timestamp is None
+              or ts > self.newest_seen_timestamp):
             self.newest_seen_timestamp = ts
             self.last_batch_count_at_newest = 1
-
-        if ts not in self.unacked_new:
-            self.unacked_new[ts] = set()
-        if ts not in self.acked_new:
-            self.acked_new[ts] = set()
-
-        # Check if this message has already been seen (acked or
-        # otherwise)
-        if (channel, message) in self.unacked_new[ts]:
+            tsinfo = TimestampInfo(ts)
+            self.timestamp_info.append(tsinfo)
+        else:
+            # FIXME: in case of bad weirdness, maybe what we want
+            # here is to send the message immediately, with ttl of
+            # zero (and dispatcher could recognize that case
+            # specifically.)
+            self._log_warning('Unexpected message at %s; ignored' % ts)
             return
-        if (channel, message) in self.acked_new[ts]:
-            return
+
+        msginfo.timestamp = tsinfo
 
         # Check if the message was acked in a previous run.
         # Generating _message_hash(message) may be expensive so don't
         # do it if we don't have to.
-        if ts in self.acked_saved:
-            mstr = self._message_hash(message)
-            if mstr in self.acked_saved[ts]:
-                self.acked_saved[ts].discard(mstr)
-                if len(self.acked_saved[ts]) == 0:
-                    del self.acked_saved[ts]
-                self.acked_new[ts].add((channel, message))
-                return
+        if self.acked_saved:
+            aold = self.acked_saved.get(ts, None)
+            if aold is not None:
+                mstr = self._message_hash(message)
+                if mstr in aold:
+                    aold.discard(mstr)
+                    if len(aold) == 0:
+                        del self.acked_saved[ts]
+                    tsinfo.seen.add(msginfo)
+                    return
 
-        self.unacked_new[ts].add((channel, message))
-        self._update_pointer()
+        tsinfo.seen.add(msginfo)
+        tsinfo.unacked.add(msginfo)
         dispatcher.send_message(channel, message, self, ttl)
 
     def nack_message(self, channel, message, handler):
         pass
 
     def ack_message(self, channel, message, handler):
-        ts = self.message_timestamp(message)
-        if ts in self.unacked_new:
-            self.unacked_new[ts].discard((channel, message))
-            # else warn...
-        if ts in self.acked_new:
-            self.acked_new[ts].add((channel, message))
-            # else warn...
+        try:
+            msginfo = self.message_info[message]
+            tsinfo = msginfo.timestamp
+            tsinfo.unacked.remove(msginfo)
+        except KeyError:
+            self._log_warning('ack for an unknown message')
         self._update_pointer()
-        # FIXME: check leaks
 
     def _update_pointer(self):
-        # Delete old empty lists of unacked messages
-        ts = None
-        while len(self.unacked_new) > 0:
-            ts = next(iter(self.unacked_new))
-            if len(self.unacked_new[ts]) == 0:
-                del self.unacked_new[ts]
-                ts = None
-            else:
-                break
-        if ts is None:
-            return
-        if (self.oldest_unacked_timestamp is not None
-                and ts <= self.oldest_unacked_timestamp):
+        try:
+            tsinfo = self.timestamp_info[0]
+        except IndexError:
             return
 
-        # ts is now the oldest unacked timestamp
-        self.oldest_unacked_timestamp = ts
+        # Find the oldest timestamp that still has unacked messages,
+        # and drop all earlier timestamps.
 
-        # Delete any older lists of acked messages
-        while len(self.acked_new) > 0:
-            ats = next(iter(self.acked_new))
-            if ats < ts:
-                del self.acked_new[ats]
-            else:
-                break
+        if tsinfo.unacked or len(self.timestamp_info) <= 1:
+            return
+        self.timestamp_info.popleft()
+        tsinfo = self.timestamp_info[0]
+
+        while (not tsinfo.unacked and len(self.timestamp_info) > 1):
+            self.timestamp_info.popleft()
+            tsinfo = self.timestamp_info[0]
+
+        self.oldest_unacked_timestamp = ts = tsinfo.timestamp
 
         # Delete any older lists of saved acked messages; warn if
         # those messages failed to reappear
@@ -452,6 +454,18 @@ class ExtractorQueue:
 
     def _log_warning(self, text):
         logging.warning(text)
+
+class TimestampInfo:
+    def __init__(self, timestamp):
+        self.timestamp = timestamp
+        self.unacked = set()
+        self.seen = set()
+
+class MessageInfo:
+    def __init__(self, channel, message):
+        self.channel = channel
+        self.message = message
+        self.timestamp = None
 
 class DefaultDeadLetterHandler:
     def send_message(self, channel, message, dispatcher, ttl):
