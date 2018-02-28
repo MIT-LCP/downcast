@@ -118,6 +118,8 @@ class ParallelDispatcher:
 class ChildConnector:
     """Object that routes messages to a child process."""
 
+    _all_pipes = set()
+
     def __init__(self, handler, pending_limit = 50, name = None):
         self.pending_limit = pending_limit
         self.pending_count = pending_limit
@@ -125,10 +127,11 @@ class ChildConnector:
         self.message_id = 0
 
         (parent_pipe, child_pipe) = Pipe()
+        ChildConnector._all_pipes.add(parent_pipe)
         self.child = ChildContext(handler)
         self.process = Process(target = self.child._main,
-                               args = (name, parent_pipe, child_pipe),
-                               name = name, daemon = True)
+                               args = (name, child_pipe),
+                               name = name)
         self.process.start()
         self.parent_pipe = parent_pipe
         child_pipe.close()
@@ -136,13 +139,16 @@ class ChildConnector:
     def close(self):
         """Shut down the child process."""
         try:
-            self._sync_response()
+            if self.pending_count != self.pending_limit:
+                try:
+                    self._sync_response()
+                except Exception:
+                    logging.exception('Unhandled exception in child process')
             self.parent_pipe.send(ChildRequest.EXIT)
-        except Exception:
+        finally:
             self.parent_pipe.close()
-            raise
-        self.parent_pipe.close()
-        self.process.join()
+            ChildConnector._all_pipes.discard(self.parent_pipe)
+            self.process.join()
 
     def send_message(self, channel, message, source, ttl):
         """Send a message to the child process."""
@@ -203,8 +209,16 @@ class ChildContext:
         self.acks = []
         self.pipe = None
 
-    def _main(self, name, parent_pipe, child_pipe):
-        parent_pipe.close()
+    def _main(self, name, child_pipe):
+        # Close all of the parent-side pipes that were created
+        # previously (and inherited by the child process.)
+        # Unfortunately we can't simply close all file descriptors, or
+        # even all 'non-inheritable' file descriptors, as that breaks
+        # pymssql.
+        for p in ChildConnector._all_pipes:
+            p.close()
+        ChildConnector._all_pipes = set()
+
         self.pipe = child_pipe
         pf = os.environ.get('DOWNCAST_PROFILE_OUT', None)
         if pf is not None and name is not None:
@@ -272,6 +286,8 @@ class ChildContext:
                     resp = (self.acks, exc, exc_msg)
                     self.acks = []
                     self.pipe.send(resp)
+                elif req is ChildRequest.EXIT:
+                    return
 
     def nack_message(self, channel, message, handler):
         """Defer processing of a message."""
