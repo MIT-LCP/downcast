@@ -105,9 +105,9 @@ def _get_completions(text):
 def _add_known_uuid(val):
     s = repr(str(val))
     prefix = s[1:3]
-    if prefix not in known_ids:
-        known_ids[prefix] = set()
-    known_ids[prefix].add(s)
+    if prefix not in _known_ids:
+        _known_ids[prefix] = set()
+    _known_ids[prefix].add(s)
 
 _ctext = ''
 _ccompl = []
