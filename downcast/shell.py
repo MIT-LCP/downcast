@@ -21,6 +21,7 @@ import readline
 import time
 import os
 import re
+import locale
 from argparse import ArgumentParser
 from uuid import UUID
 from decimal import Decimal
@@ -139,8 +140,8 @@ _max_align_width = 64
 _align_group_size = 20
 
 def _format_value(val):
-    if isinstance(val, Decimal):
-        return str(val)
+    if isinstance(val, Decimal) or isinstance(val, int):
+        return '{:n}'.format(val)
     elif isinstance(val, UUID):
         _add_known_uuid(val)
         return repr(str(val))
@@ -232,6 +233,8 @@ def _run_query(db, query):
 ################################################################
 
 def main():
+    locale.setlocale(locale.LC_ALL, '')
+
     p = ArgumentParser()
     p.add_argument('--server', metavar = 'NAME', default = 'demo')
     p.add_argument('--password-file', metavar = 'FILE',
