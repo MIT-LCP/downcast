@@ -18,13 +18,15 @@
 
 import os
 import heapq
+import logging
+from decimal import Decimal
 
 from ..messages import WaveSampleMessage
+from ..attributes import WaveAttr
 
 class WaveSampleHandler:
     def __init__(self, archive):
         self.archive = archive
-        self.files = set()
         self.info = {}
 
     def send_message(self, chn, msg, source, ttl):
@@ -52,7 +54,7 @@ class WaveSampleHandler:
 
         info = self.info.get(record)
         if info is None:
-            info = self.info[record] = WaveOutputInfo()
+            info = self.info[record] = WaveOutputInfo(record)
 
         # FIXME: things are likely to break interestingly with
         # non-power-of-two tps; we should make an effort to not
@@ -127,9 +129,8 @@ class WaveSampleHandler:
             source.nack_message(chn, msg, self, replay = True)
 
     def flush(self):
-        for f in self.files:
-            f.flush()
-        self.files = set()
+        for (record, info) in self.info.items():
+            info.flush_signals(record)
         self.archive.flush()
 
 def _parse_sample_list(text):
@@ -222,20 +223,83 @@ def _get_signal_units_desc(attr):
         desc = (desc or '#%d/%d' % (attr.base_physio_id, attr.physio_id))
     return (units, desc)
 
+# Convert string to Decimal
+def _todec(val):
+    if val is None:
+        return None
+    else:
+        return Decimal(val)
+
+# Convert Decimal to string
+def _fromdec(val):
+    if val is None:
+        return None
+    else:
+        return str(val)
+
 class WaveOutputInfo:
-    def __init__(self):
+    def __init__(self, record):
+        # Pending message data - not saved to disk
         self.signal_buffer = SignalBuffer()
         self.last_seen_time = None
-        self.signal_file = None
-        self.frame_offset = {}
-        self.frame_size = None
 
-        # FIXME: output state must be saved/restored (using properties
-        # and/or header file)
+        # Persistent state
+
+        # flushed_time: time at which all signal data has been written
+        self.flushed_time = record.get_int_property(['waves', 'flushed_time'])
+
+        # signal_file: name of the currently open signal file, if any
+        self.signal_file = record.get_str_property(['waves', 'signal_file'])
+
+        # segment_start: starting time (relative seqnum) of the
+        # beginning of the current segment
+        self.segment_start = record.get_int_property(
+            ['waves', 'segment_start'])
+
+        # segment_end: ending time (relative seqnum) of the end of the
+        # current segment
+        self.segment_end = record.get_int_property(['waves', 'segment_end'])
+
+        # signals: list of signal attributes
         self.segment_signals = []
-        self.segment_start = None
-        self.segment_end = None
-        self.flushed_time = None
+        self.frame_offset = {}
+        self.frame_size = 0
+        try:
+            siginfo = record.get_property(['waves', 'signals'])
+            for s in siginfo:
+                attr = WaveAttr(
+                    base_physio_id        = s['base_physio_id'],
+                    physio_id             = s['physio_id'],
+                    label                 = s['label'],
+                    channel               = s['channel'],
+                    sample_period         = s['sample_period'],
+                    is_slow_wave          = s['is_slow_wave'],
+                    is_derived            = s['is_derived'],
+                    color                 = s['color'],
+                    low_edge_frequency    = _todec(s['low_edge_frequency']),
+                    high_edge_frequency   = _todec(s['high_edge_frequency']),
+                    scale_lower           = s['scale_lower'],
+                    scale_upper           = s['scale_upper'],
+                    calibration_scaled_lower = s['calibration_scaled_lower'],
+                    calibration_scaled_upper = s['calibration_scaled_upper'],
+                    calibration_abs_lower = _todec(s['calibration_abs_lower']),
+                    calibration_abs_upper = _todec(s['calibration_abs_upper']),
+                    calibration_type      = s['calibration_type'],
+                    unit_label            = s['unit_label'],
+                    unit_code             = s['unit_code'],
+                    ecg_lead_placement    = s['ecg_lead_placement']
+                )
+                self.segment_signals.append(attr)
+
+                # FIXME: maybe spf should be stored in properties explicitly
+                spf = -(-_tpf // attr.sample_period)
+                self.frame_offset[attr] = self.frame_size
+                self.frame_size += spf
+
+        except (KeyError, TypeError, ValueError, ArithmeticError):
+            if self.signal_file is not None:
+                logging.exception('unable to resume signal output')
+            self.close_segment(record)
 
     def close_segment(self, record):
         if self.signal_file is not None:
@@ -245,6 +309,10 @@ class WaveOutputInfo:
         self.segment_start = None
         self.frame_offset = {}
         self.frame_size = None
+        record.set_property(['waves', 'signals'], [])
+        record.set_property(['waves', 'signal_file'], None)
+        record.set_property(['waves', 'segment_start'], None)
+        record.set_property(['waves', 'segment_end'], None)
 
     def open_segment(self, record, segname, start, signals):
         self.close_segment(record)
@@ -293,6 +361,34 @@ class WaveOutputInfo:
                 self.frame_offset[signal] = self.frame_size
                 self.frame_size += spf
 
+        sigprop = []
+        for attr in signals:
+            sigprop.append({
+                'base_physio_id':           attr.base_physio_id,
+                'physio_id':                attr.physio_id,
+                'label':                    attr.label,
+                'channel':                  attr.channel,
+                'sample_period':            attr.sample_period,
+                'is_slow_wave':             attr.is_slow_wave,
+                'is_derived':               attr.is_derived,
+                'color':                    attr.color,
+                'low_edge_frequency':  _fromdec(attr.low_edge_frequency),
+                'high_edge_frequency': _fromdec(attr.high_edge_frequency),
+                'scale_lower':              attr.scale_lower,
+                'scale_upper':              attr.scale_upper,
+                'calibration_scaled_lower': attr.calibration_scaled_lower,
+                'calibration_scaled_upper': attr.calibration_scaled_upper,
+                'calibration_abs_lower': _fromdec(attr.calibration_abs_lower),
+                'calibration_abs_upper': _fromdec(attr.calibration_abs_upper),
+                'calibration_type':         attr.calibration_type,
+                'unit_label':               attr.unit_label,
+                'unit_code':                attr.unit_code,
+                'ecg_lead_placement':       attr.ecg_lead_placement
+            })
+        record.set_property(['waves', 'signals'], sigprop)
+        record.set_property(['waves', 'signal_file'], datname)
+        record.set_property(['waves', 'segment_start'], start)
+        record.set_property(['waves', 'segment_end'], start)
         self.signal_file = datname
         self.segment_signals = signals
         self.segment_start = start
@@ -325,6 +421,14 @@ class WaveOutputInfo:
 
         if end > self.segment_end:
             self.segment_end = end
+
+    def flush_signals(self, record):
+        if self.signal_file is not None:
+            sf = record.open_bin_file(self.signal_file)
+            sf.flush()
+        record.set_property(['waves', 'segment_start'], self.segment_start)
+        record.set_property(['waves', 'segment_end'], self.segment_end)
+        record.set_property(['waves', 'flushed_time'], self.flushed_time)
 
 ################################################################
 
