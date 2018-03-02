@@ -40,12 +40,15 @@ class WaveSampleHandler:
             # continue processing
             return
 
-        # Look up the corresponding record and add event to the time map
+        # Look up the corresponding record
         record = self.archive.get_record(msg, (ttl <= 0))
         if record is None:
             # Record not yet available - hold message in pending and
             # continue processing
             return
+
+        # Add event to the time map
+        record.set_time(msg.sequence_number, msg.timestamp)
 
         info = self.info.get(record)
         if info is None:
@@ -63,8 +66,13 @@ class WaveSampleHandler:
         tps = attr.sample_period
         nsamples = len(msg.wave_samples) // 2
 
-        # FIXME: is sequence_number the start or end?
-        msg_start = msg.sequence_number - record.seqnum0()
+        # Determine the relative sequence number
+        s0 = record.seqnum0()
+        if s0 is None:
+            record.set_seqnum0(msg.sequence_number)
+            msg_start = 0
+        else:
+            msg_start = msg.sequence_number - s0
         msg_start -= msg_start % tps
         msg_end = msg_start + nsamples * tps
 

@@ -39,50 +39,23 @@ class AlertHandler:
             # continue processing
             return
 
-        # Determine the wall clock time of the corresponding waveform
-        # message
-        wtime = record.get_clock_time(msg.sequence_number, (ttl <= 0))
-        if wtime is None and ttl > 0:
-            # Timing information not yet available - hold message in
-            # pending and continue processing
-            return
-        elif wtime is None:
-            # FIXME: add something to indicate that the event
-            # timestamp is not accurate
-            wtime = msg.timestamp
-
         # Open or create a log file
-        logfile = record.open_log_file('_alerts')
+        logfile = record.open_log_file('_phi_alerts')
         self.files.add(logfile)
 
         # Write value to the log file
-        msg_time = (msg.sequence_number + delta_ms(msg.timestamp, wtime)
-                    - record.seqnum0())
-
-        if msg.announce_time > _sane_time:
-            announce_time = (msg.sequence_number
-                             + delta_ms(msg.announce_time, wtime)
-                             - record.seqnum0())
-        else:
-            announce_time = None
-
-        if msg.onset_time > _sane_time:
-            onset_time = (msg.sequence_number
-                          + delta_ms(msg.onset_time, wtime)
-                          - record.seqnum0())
-        else:
-            onset_time = None
-
-        if msg.end_time > _sane_time:
-            end_time = (msg.sequence_number
-                        + delta_ms(msg.end_time, wtime)
-                        - record.seqnum0())
-        else:
-            end_time = None
+        sn = msg.sequence_number
+        ts = msg.timestamp.strftime_utc('%Y%m%d%H%M%S%f')
+        ats = ots = ets = None
+        if msg.announce_time and msg.announce_time > _sane_time:
+            ats = msg.announce_time.strftime_utc('%Y%m%d%H%M%S%f')
+        if msg.onset_time and msg.onset_time > _sane_time:
+            ots = msg.onset_time.strftime_utc('%Y%m%d%H%M%S%f')
+        if msg.end_time and msg.end_time > _sane_time:
+            ets = msg.end_time.strftime_utc('%Y%m%d%H%M%S%f')
 
         lbl = msg.label
-        logfile.append('%d,%s,%s,%s,%s' % (msg_time, announce_time,
-                                           onset_time, end_time, lbl))
+        logfile.append('%s,%s,%s,%s,%s,%s' % (sn, ts, ats, ots, ets, lbl))
         source.ack_message(chn, msg, self)
 
     def flush(self):

@@ -17,12 +17,14 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from ..messages import NumericValueMessage
-from ..timestamp import delta_ms
+
+_del_control = str.maketrans({x: ' ' for x in list(range(32)) + [127]})
 
 class NumericValueHandler:
     def __init__(self, archive):
         self.archive = archive
         self.files = set()
+        self.last_event = {}
 
     def send_message(self, chn, msg, source, ttl):
         if not isinstance(msg, NumericValueMessage):
@@ -44,27 +46,27 @@ class NumericValueHandler:
             # continue processing
             return
 
-        # Determine the wall clock time of the corresponding waveform
-        # message
-        wtime = record.get_clock_time(msg.sequence_number, (ttl <= 0))
-        if wtime is None and ttl > 0:
-            # Timing information not yet available - hold message in
-            # pending and continue processing
-            return
-        elif wtime is None:
-            # FIXME: add something to indicate that the event
-            # timestamp is not accurate
-            wtime = msg.timestamp
-
         # Open or create a log file
-        logfile = record.open_log_file('_numerics')
+        logfile = record.open_log_file('_phi_numerics')
         self.files.add(logfile)
 
-        # Write value to the log file
-        time = (msg.sequence_number + delta_ms(msg.timestamp, wtime)
-                - record.seqnum0())
+        # Write the sequence number and timestamp to the log file
+        # (if they don't differ from the previous event)
+        sn = msg.sequence_number
+        ts = msg.timestamp
+        (old_sn, old_ts) = self.last_event.get(record, (None, None))
+        if sn != old_sn:
+            logfile.append('S%s' % sn)
+        if ts != old_ts:
+            logfile.append(ts.strftime_utc('%Y%m%d%H%M%S%f'))
+        self.last_event[record] = (sn, ts)
+
+        # Write the value to the log file
+        lbl = attr.sub_label.translate(_del_control)
         val = msg.value
-        logfile.append('%d,%s,%s' % (time, attr.sub_label, val))
+        if val is None:
+            val = ''
+        logfile.append('%s\t%s' % (lbl, val))
         source.ack_message(chn, msg, self)
 
     def flush(self):
