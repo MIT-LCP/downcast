@@ -258,6 +258,12 @@ class ArchiveRecord:
         except (KeyError, TypeError):
             return default
 
+    def get_timestamp_property(self, path, default = None):
+        try:
+            return T(str(self.get_property(path)))
+        except (KeyError, TypeError, ValueError):
+            return default
+
     def open_log_file(self, name):
         if name not in self.files:
             fname = os.path.join(self.path, name)
