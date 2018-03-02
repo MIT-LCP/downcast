@@ -191,7 +191,7 @@ class ArchiveRecord:
 
     def finalize(self):
         # FIXME: lots of stuff to do here...
-        for f in self.files:
+        for f in self.files.values():
             f.close()
         self.modified = True
         self.flush()
