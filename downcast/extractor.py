@@ -34,7 +34,8 @@ from .parser import (WaveSampleParser, NumericValueParser,
 from .timestamp import (T, very_old_timestamp)
 
 class Extractor:
-    def __init__(self, db, dest_dir, fatal_exceptions = False, debug = False):
+    def __init__(self, db, dest_dir, fatal_exceptions = False,
+                 deterministic_output = False, debug = False):
         self.db = db
         self.dest_dir = dest_dir
         self.queues = []
@@ -46,6 +47,7 @@ class Extractor:
         if dest_dir is not None:
             os.makedirs(dest_dir, exist_ok = True)
         self.dispatcher.add_dead_letter_handler(DefaultDeadLetterHandler())
+        self.deterministic_output = deterministic_output
         self.debug = debug
 
     def add_queue(self, queue):
@@ -64,7 +66,7 @@ class Extractor:
         self.dispatcher.flush()
         if self.dest_dir is not None:
             for queue in self.queues:
-                queue.save_state(self.dest_dir)
+                queue.save_state(self.dest_dir, self.deterministic_output)
 
     def idle(self):
         """Check whether all available messages have been received.
@@ -259,7 +261,7 @@ class ExtractorQueue:
                         self.acked_saved[ts] = set()
                     self.acked_saved[ts].add(msgstr)
 
-    def save_state(self, dest_dir):
+    def save_state(self, dest_dir, deterministic = False):
         data = {}
         if self.oldest_unacked_timestamp is not None:
             data['time'] = str(self.oldest_unacked_timestamp)
@@ -277,10 +279,13 @@ class ExtractorQueue:
                     if tsstr not in data['acked']:
                         data['acked'][tsstr] = []
                     data['acked'][tsstr].append(self._message_hash(msg))
+            if deterministic:
+                for m in data['acked'].values():
+                    m.sort()
         filename = self._state_file_name(dest_dir)
         tmpfname = filename + '.tmp'
         with open(tmpfname, 'wt', encoding = 'UTF-8') as f:
-            json.dump(data, f)
+            json.dump(data, f, sort_keys = deterministic)
             f.write('\n')
             f.flush()
             os.fdatasync(f.fileno())

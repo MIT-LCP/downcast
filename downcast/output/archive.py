@@ -35,11 +35,12 @@ def _subdirs(dirname):
             yield (p, f)
 
 class Archive:
-    def __init__(self, base_dir):
+    def __init__(self, base_dir, deterministic_output = False):
         self.base_dir = base_dir
         self.prefix_length = 2
         self.records = {}
         self.split_interval = 60 * 60 * 1000 # ~ one hour
+        self.deterministic_output = deterministic_output
 
         pat = re.compile('\A([A-Za-z0-9-]+)_([0-9a-f-]+)_([-0-9]+)\Z',
                          re.ASCII)
@@ -136,7 +137,7 @@ class Archive:
 
     def flush(self):
         for rec in self.records.values():
-            rec.flush()
+            rec.flush(self.deterministic_output)
 
     def terminate(self):
         for rec in self.records.values():
@@ -196,9 +197,10 @@ class ArchiveRecord:
         self.flush()
         return
 
-    def flush(self):
+    def flush(self, deterministic = False):
         if self.modified:
-            self._write_state_file('_phi_properties', self.properties)
+            self._write_state_file('_phi_properties', self.properties,
+                                   deterministic = deterministic)
             self.time_map.write(self.path, '_phi_time_map')
             self.dir_sync()
 
@@ -217,11 +219,11 @@ class ArchiveRecord:
         except (FileNotFoundError, UnicodeError, ValueError):
             return None
 
-    def _write_state_file(self, name, content):
+    def _write_state_file(self, name, content, deterministic = False):
         fname = os.path.join(self.path, name)
         tmpfname = os.path.join(self.path, '_' + name + '.tmp')
         with open(tmpfname, 'wt', encoding = 'UTF-8') as f:
-            json.dump(content, f)
+            json.dump(content, f, sort_keys = deterministic)
             f.write('\n')
             f.flush()
             os.fdatasync(f.fileno())
