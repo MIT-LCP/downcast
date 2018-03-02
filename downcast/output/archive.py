@@ -18,15 +18,11 @@
 
 import os
 import re
-import csv
 import json
-import bisect
-import logging
-from datetime import timedelta
 
-from ..messages import WaveSampleMessage, NumericValueMessage
-from ..timestamp import T
+from ..timestamp import T, delta_ms
 from .files import ArchiveLogFile, ArchiveBinaryFile
+from .timemap import TimeMap
 
 def _subdirs(dirname):
     for f in os.listdir(dirname):
@@ -91,31 +87,31 @@ class Archive:
         rec = self.records.get((servername, record_id))
 
         # Check if record needs to be split (interval between
-        # consecutive WaveSampleMessages or consecutive
-        # NumericValueMessages exceeds split_interval.)
+        # consecutive messages exceeds split_interval.)
 
-        # Note that we are assuming that each message type is
-        # processed in roughly-chronological order, and that different
-        # message types never get too far out of sync with each other.
+        # This is done based on timestamps, which is bogus.  It also
+        # ignores the inherent skewing between different message
+        # types.  But everything about record splitting is slightly
+        # bogus and ad-hoc.
 
-        # FIXME: This logic needs improvement.  In particular it won't
-        # handle the *end* of a patient stay, and it also won't work
-        # if alerts/enums are queried ahead of waves/numerics.
-        # Assuming we can't trust TimeStamps, need to use
-        # concurrently-processed records to determine when
-        # 'split_interval' ticks have elapsed.
+        # FIXME: We still need to ensure that records are finalized at
+        # the end of a patient stay, based on nearby message
+        # timestamps.
 
-        if rec is not None and (isinstance(message, WaveSampleMessage)
-                                or isinstance(message, NumericValueMessage)):
-            seqnum = message.sequence_number
-            if isinstance(message, WaveSampleMessage):
-                end = rec.get_int_property(['waves_end'])
+        timestamp = message.timestamp
+
+        if rec is not None:
+            end = rec.end_time()
+            if end is None:
+                rec.set_end_time(timestamp)
             else:
-                end = rec.get_int_property(['numerics_end'])
-            if end is not None and seqnum - end > self.split_interval:
-                self.records[servername, record_id] = None
-                rec.finalize()
-                rec = None
+                n = delta_ms(timestamp, end)
+                if n > self.split_interval:
+                    rec.finalize()
+                    del self.records[servername, record_id]
+                    rec = None
+                elif n > 0:
+                    rec.set_end_time(timestamp)
 
         # Create a new record if needed
         if rec is None:
@@ -129,9 +125,7 @@ class Archive:
                                 datestamp = datestamp,
                                 create = True)
             self.records[servername, record_id] = rec
-
-        # Update time mapping
-        rec.add_event(message)
+            rec.set_end_time(timestamp)
 
         return rec
 
@@ -155,39 +149,25 @@ class ArchiveRecord:
             os.makedirs(self.path, exist_ok = True)
 
         self.properties = self._read_state_file('_phi_properties')
-        self.time_map = ArchiveRecordTimeMap(record_id)
+        self.time_map = TimeMap(record_id)
         self.time_map.read(path, '_phi_time_map')
+        self._base_seqnum = self.get_int_property(['base_sequence_number'])
+        self._end_time = self.get_timestamp_property(['end_time'])
         self.modified = False
 
-    def add_event(self, message):
-        st = self.get_int_property(['start_time'])
-        t = getattr(message, 'sequence_number', None)
-        if st is None and t is not None:
-            self.set_property(['start_time'], t)
-        if isinstance(message, WaveSampleMessage):
-            self.set_property(['waves_end'], t)
-            self.time_map.set_time(t, message.timestamp)
-            self.modified = True
-        if isinstance(message, NumericValueMessage):
-            self.set_property(['numerics_end'], t)
-
     def seqnum0(self):
-        return self.get_int_property(['start_time'])
+        return self._base_seqnum
 
-    def get_clock_time(self, seqnum, sync):
-        """Determine the wall-clock time at a given sequence number.
+    def set_seqnum0(self, seqnum):
+        self._base_seqnum = seqnum
+        self.modified = True
 
-        If sync is true, this is derived from the nearest
-        WaveSampleMessage that has been seen so far.  If no
-        WaveSampleMessages have been seen, the result is None.
+    def end_time(self):
+        return self._end_time
 
-        If sync is false, do not try to guess; only return a value if
-        a WaveSampleMessage has been seen at that exact sequence
-        number, or if messages have been seen both before and after
-        the given sequence number, and no clock adjustments occurred
-        between them.
-        """
-        return self.time_map.get_time(seqnum, sync)
+    def set_end_time(self, time):
+        self._end_time = time
+        self.modified = True
 
     def finalize(self):
         # FIXME: lots of stuff to do here...
@@ -199,6 +179,8 @@ class ArchiveRecord:
 
     def flush(self, deterministic = False):
         if self.modified:
+            self.set_property(['base_sequence_number'], self._base_seqnum)
+            self.set_property(['end_time'], str(self._end_time))
             self._write_state_file('_phi_properties', self.properties,
                                    deterministic = deterministic)
             self.time_map.write(self.path, '_phi_time_map')
@@ -246,6 +228,10 @@ class ArchiveRecord:
         v[path[-1]] = value
         self.modified = True
 
+    def set_time(self, seqnum, time):
+        self.time_map.set_time(seqnum, time)
+        self.modified = True
+
     def get_int_property(self, path, default = None):
         try:
             return int(self.get_property(path))
@@ -282,92 +268,3 @@ class ArchiveRecord:
         if name in self.files:
             self.files[name].close()
             del self.files[name]
-
-class ArchiveRecordTimeMap:
-    """Object that tracks the mapping between time and sequence number."""
-
-    def __init__(self, record_id):
-        self.entries = []
-        self.record_id = record_id
-
-    def read(self, path, name):
-        """Read a time map file."""
-        fname = os.path.join(path, name)
-        try:
-            with open(fname, 'rt', encoding = 'UTF-8') as f:
-                for row in csv.reader(f):
-                    start = int(row[0])
-                    end = int(row[1])
-                    baset = T(row[2])
-                    self.entries.append([start, end, baset])
-        except FileNotFoundError:
-            pass
-        self.entries.sort()
-
-    def write(self, path, name):
-        """Write a time map file."""
-        fname = os.path.join(path, name)
-        tmpfname = os.path.join(path, '_' + name + '.tmp')
-        with open(tmpfname, 'wt', encoding = 'UTF-8') as f:
-            w = csv.writer(f)
-            for e in self.entries:
-                w.writerow(e)
-            f.flush()
-            os.fdatasync(f.fileno())
-        os.rename(tmpfname, fname)
-
-    def get_time(self, seqnum, sync):
-        """Get wall-clock time at a given sequence number.
-
-        If sync is true, use the nearest reference time.  If sync is
-        false, require matching references both before (or equal to)
-        and after (or equal to) the given sequence number.
-        """
-
-        # i = index of the first span that begins at or after seqnum
-        i = bisect.bisect_right(self.entries, [seqnum])
-        p = self.entries[i-1:i]
-        n = self.entries[i:i+1]
-        if sync:
-            if n and n[0][1] >= seqnum:
-                return n[0][2] + timedelta(milliseconds = seqnum)
-            else:
-                return None
-        if p and n:
-            dp = seqnum - p[0][1]
-            dn = n[0][0] - seqnum
-            if dp < dn:
-                return p[0][2] + timedelta(milliseconds = seqnum)
-            else:
-                return n[0][2] + timedelta(milliseconds = seqnum)
-        elif p:
-            return p[0][2] + timedelta(milliseconds = seqnum)
-        elif n:
-            return n[0][2] + timedelta(milliseconds = seqnum)
-        else:
-            return None
-
-    def set_time(self, seqnum, time):
-        """Add a wall-clock time reference to the map."""
-
-        baset = time - timedelta(milliseconds = seqnum)
-
-        # i = index of the first span that begins at or after seqnum
-        i = bisect.bisect_right(self.entries, [seqnum])
-        p = self.entries[i-1:i]
-        n = self.entries[i:i+1]
-
-        if p and seqnum <= p[0][1]:
-            if baset != p[0][2]:
-                logging.warning('conflicting timestamps at %d in %s'
-                                % (seqnum, self.record_id))
-        elif n and seqnum >= n[0][1]:
-            if baset != n[0][2]:
-                logging.warning('conflicting timestamps at %d in %s'
-                                % (seqnum, self.record_id))
-        elif p and p[0][2] == baset:
-            p[0][1] = seqnum
-        elif n and n[0][2] == baset:
-            n[0][0] = seqnum
-        else:
-            self.entries.insert(i, [seqnum, seqnum, baset])
