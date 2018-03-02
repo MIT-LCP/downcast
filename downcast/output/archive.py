@@ -28,6 +28,12 @@ from ..messages import WaveSampleMessage, NumericValueMessage
 from ..timestamp import T
 from .files import ArchiveLogFile, ArchiveBinaryFile
 
+def _subdirs(dirname):
+    for f in os.listdir(dirname):
+        p = os.path.join(dirname, f)
+        if os.path.isdir(p):
+            yield (p, f)
+
 class Archive:
     def __init__(self, base_dir):
         self.base_dir = base_dir
@@ -35,29 +41,26 @@ class Archive:
         self.records = {}
         self.split_interval = 60 * 60 * 1000 # ~ one hour
 
-    def open_records(self):
         pat = re.compile('\A([A-Za-z0-9-]+)_([0-9a-f-]+)_([-0-9]+)\Z',
                          re.ASCII)
 
         # Find all existing records in 'base_dir' as well as immediate
         # subdirectories of 'base_dir'
-        for f in os.scandir(base_dir):
-            if f.is_dir():
-                subdir = os.path.join(base_dir, f.name)
-                m = pat.match(f.name)
-                if m is not None:
-                    _open_record(path = subdir,
-                                 servername = m.group(1),
-                                 record_id = m.group(2),
-                                 datestamp = m.group(3))
-                else:
-                    for g in os.scandir(subdir):
-                        m = pat.match(g.name)
-                        if m is not None and g.is_dir():
-                            _open_record(path = os.path.join(subdir, g.name),
-                                         servername = m.group(1),
-                                         record_id = m.group(2),
-                                         datestamp = m.group(3))
+        for (subdir, base) in _subdirs(self.base_dir):
+            m = pat.match(base)
+            if m is not None:
+                self._open_record(path = subdir,
+                                  servername = m.group(1),
+                                  record_id = m.group(2),
+                                  datestamp = m.group(3))
+            else:
+                for (subdir2, base2) in _subdirs(subdir):
+                    m = pat.match(base2)
+                    if m is not None:
+                        self._open_record(path = subdir2,
+                                          servername = m.group(1),
+                                          record_id = m.group(2),
+                                          datestamp = m.group(3))
 
     def _open_record(self, path, servername, record_id, datestamp):
         rec = self.records.get((servername, record_id))
