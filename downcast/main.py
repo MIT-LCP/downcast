@@ -79,6 +79,8 @@ def _parse_cmdline(args):
                    help = 'begin collecting data at the given time')
     g.add_argument('--end', metavar = 'TIME', type = _parse_timestamp,
                    help = 'collect data up to the given time')
+    g.add_argument('--terminate', action = 'store_true',
+                   help = 'handle final data after permanent shutdown')
 
     opts = p.parse_args(args)
     progname = sys.argv[0]
@@ -179,5 +181,8 @@ def _main_loop(opts, extractor, archive):
 
     while opts.live or not extractor.idle():
         extractor.run()
+
+    if opts.terminate:
+        extractor.dispatcher.terminate()
 
     extractor.flush()
