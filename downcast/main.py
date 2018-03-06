@@ -127,7 +127,6 @@ def _init_extractor(opts):
     pmq = PatientMappingQueue('mapping',
                               start_time = opts.start,
                               end_time = opts.end)
-    pmdelay = timedelta(minutes = 30)
     ex.add_queue(pmq)
 
     ex.add_queue(PatientBasicInfoQueue(
@@ -145,14 +144,10 @@ def _init_extractor(opts):
 
     ex.add_queue(WaveSampleQueue(
         'waves',
-        start_time = opts.start, end_time = opts.end,
-        patient_mapping_queue = pmq,
-        patient_mapping_delay = pmdelay))
+        start_time = opts.start, end_time = opts.end))
     ex.add_queue(NumericValueQueue(
         'numerics',
-        start_time = opts.start, end_time = opts.end,
-        patient_mapping_queue = pmq,
-        patient_mapping_delay = pmdelay))
+        start_time = opts.start, end_time = opts.end))
     # ex.add_queue(EnumerationValueQueue(
     #     'enums',
     #     start_time = opts.start, end_time = opts.end,

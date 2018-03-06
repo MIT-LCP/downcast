@@ -482,14 +482,9 @@ class DefaultDeadLetterHandler:
 ################################################################
 
 class MappingIDExtractorQueue(ExtractorQueue):
-    def __init__(self, queue_name, mapping_id = None,
-                 patient_mapping_queue = None,
-                 patient_mapping_delay = None,
-                 **kwargs):
+    def __init__(self, queue_name, mapping_id = None, **kwargs):
         ExtractorQueue.__init__(self, queue_name, **kwargs)
         self.mapping_id = mapping_id
-        self.patient_mapping_queue = patient_mapping_queue
-        self.patient_mapping_delay = patient_mapping_delay
         self.stalled_ids = {}
         self.unstalled_ids = set()
 
@@ -504,35 +499,6 @@ class MappingIDExtractorQueue(ExtractorQueue):
         return timedelta(seconds = 11)
     def bias(self):
         return timedelta(0)
-
-    def nack_message(self, channel, message, handler):
-        ExtractorQueue.nack_message(self, channel, message, handler)
-        if self.patient_mapping_queue is not None:
-            db = message.origin
-            mid = message.mapping_id
-            ts = message.timestamp
-            if ((db, mid) not in self.unstalled_ids
-                    and ((db, mid) not in self.stalled_ids
-                         or self.stalled_ids[db, mid] > ts)):
-                self.stalled_ids[db, mid] = ts
-
-    def stalling_queue(self):
-        if self.patient_mapping_queue is not None:
-            limit = (self.patient_mapping_queue.query_time
-                     - self.patient_mapping_delay)
-
-            unstalled = set()
-            for ((db, mid), ts) in self.stalled_ids.items():
-                pid = db.get_patient_id(mid, False)
-                if (pid is not None or ts < limit):
-                    unstalled.add((db, mid))
-            for (db, mid) in unstalled:
-                del self.stalled_ids[db, mid]
-                self.unstalled_ids.add((db, mid))
-
-            if len(self.stalled_ids) > 0:
-                return self.patient_mapping_queue
-        return None
 
 class PatientIDExtractorQueue(ExtractorQueue):
     def __init__(self, queue_name, patient_id = None, **kwargs):
