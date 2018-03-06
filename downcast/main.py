@@ -32,6 +32,8 @@ from .extractor import (Extractor, WaveSampleQueue, NumericValueQueue,
 from .output.archive import Archive
 from .output.numerics import NumericValueHandler
 from .output.waveforms import WaveSampleHandler
+from .output.enums import EnumerationValueHandler
+from .output.alerts import AlertHandler
 from .output.mapping import PatientMappingHandler
 from .output.patients import PatientHandler
 
@@ -148,27 +150,25 @@ def _init_extractor(opts):
     ex.add_queue(NumericValueQueue(
         'numerics',
         start_time = opts.start, end_time = opts.end))
-    # ex.add_queue(EnumerationValueQueue(
-    #     'enums',
-    #     start_time = opts.start, end_time = opts.end,
-    #     patient_mapping_queue = pmq,
-    #     patient_mapping_delay = pmdelay))
-    # ex.add_queue(AlertQueue(
-    #     'alerts',
-    #     start_time = opts.start, end_time = opts.end,
-    #     patient_mapping_queue = pmq,
-    #     patient_mapping_delay = pmdelay))
-
-    # Create or refresh state files, and fail if they're not writable
-    ex.flush()
+    ex.add_queue(EnumerationValueQueue(
+        'enums',
+        start_time = opts.start, end_time = opts.end))
+    ex.add_queue(AlertQueue(
+        'alerts',
+        start_time = opts.start, end_time = opts.end))
     return ex
 
 def _init_archive(opts, extractor):
-    a = Archive(opts.output_dir)
+    a = Archive(opts.output_dir, deterministic_output = True)
     extractor.add_handler(NumericValueHandler(a))
     extractor.add_handler(WaveSampleHandler(a))
+    extractor.add_handler(EnumerationValueHandler(a))
+    extractor.add_handler(AlertHandler(a))
     extractor.add_handler(PatientMappingHandler(a))
     extractor.add_handler(PatientHandler(a))
+
+    # Create or refresh state files, and fail if they're not writable
+    extractor.flush()
     return a
 
 def _main_loop(opts, extractor, archive):
