@@ -115,17 +115,18 @@ class TimeMap:
         for n in self.entries:
             if p and n[3]:
                 gapstart = p[2] + timedelta(milliseconds = p[1])
-                gapend = n[2] + timedelta(milliseconds = n[1])
+                gapend = n[2] + timedelta(milliseconds = n[0])
                 n[3].add(gapstart)
                 n[3].add(gapend)
                 best = (timedelta(0), gapstart)
                 for d in _differences(sorted(n[3])):
                     best = max(best, d)
-                tsplit = best[1] + 0.5 * best[0]
-                snp = delta_ms(tsplit, p[2])
-                snn = delta_ms(tsplit, n[2])
-                self.set_time(snp, tsplit)
-                self.set_time(snn, tsplit)
+                tbefore = best[1]
+                tafter = best[1] + best[0]
+                snp = delta_ms(tbefore, p[2])
+                snn = delta_ms(tafter, n[2])
+                self.set_time(snp, tbefore)
+                self.set_time(snn, tafter)
             p = n
 
 def _differences(k):
