@@ -166,7 +166,7 @@ class DWCDB:
         # ensure that attr_db connections are not shared between
         # processes
         pid = os.getpid()
-        if self._server.attr_db_pid is pid:
+        if self._server.attr_db_pid == pid:
             conn = self._server.attr_db
         else:
             self._server.attr_db = conn = self._server.connect()
