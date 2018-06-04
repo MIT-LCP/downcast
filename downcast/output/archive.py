@@ -230,6 +230,9 @@ class ArchiveRecord:
         AlertHandler.finalize_record(self)
         PatientMappingHandler.finalize_record(self)
         PatientHandler.finalize_record(self)
+        for f in self.files.values():
+            f.close()
+        self.files = {}
         self.set_property(['finalized'], 1)
         self.flush(True)
 
