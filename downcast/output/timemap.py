@@ -25,7 +25,24 @@ from datetime import timedelta
 from ..timestamp import T, delta_ms
 
 class TimeMap:
-    """Object that tracks the mapping between time and sequence number."""
+    """
+    Object that tracks the mapping between time and sequence number.
+
+    In general, sequence numbers provide a reliable measurement of
+    time; wall-clock timestamps do not.
+
+    (For example, two events whose sequence numbers differ by
+    1,000,000 are exactly twice as far apart as two events whose
+    sequence numbers differ by 500,000.  However, two events whose
+    wall-clock timestamps differ by 1,000 seconds might be anywhere
+    from 970 to 1,030 seconds apart.)
+
+    This object aggregates the available information concerning the
+    mapping (which is not necessarily injective in either direction)
+    between sequence number and timestamp, so that given an arbitrary
+    timestamp, it is possible to determine the most likely sequence
+    number at which that timestamp would have been generated.
+    """
 
     def __init__(self, record_id):
         self.entries = []
@@ -58,8 +75,20 @@ class TimeMap:
         os.rename(tmpfname, fname)
 
     def set_time(self, seqnum, time):
-        """Add a wall-clock time reference to the map."""
+        """
+        Add a reference timestamp to the map.
 
+        This indicates that we know (from a reliable source, such as a
+        wave sample message) the exact wall-clock time at a given
+        sequence number.
+
+        Given this information, we can infer what the wall-clock time
+        must have been at other moments in time, so long as the wall
+        clock is not adjusted.
+
+        This information is treated as trustworthy and will be saved
+        to the time map file when write() is called.
+        """
         baset = time - timedelta(milliseconds = seqnum)
 
         # i = index of the first span that begins at or after seqnum
@@ -95,6 +124,20 @@ class TimeMap:
             self.entries.insert(i, [seqnum, seqnum, baset, set()])
 
     def add_time(self, time):
+        """
+        Add a non-reference timestamp to the map.
+
+        This indicates that we have observed the given wall-clock time
+        (for example, it is used as the timestamp of a numeric or
+        alert message), but we do not yet know precisely when that
+        timestamp occurred.
+
+        This information is not saved in the time map file, but is
+        used by resolve_gaps() to refine the time map.
+
+        This function should be called after all reference timestamps
+        have been recorded using set_time().
+        """
         for e in self.entries:
             start = e[2] + timedelta(milliseconds = e[0])
             if time < start:
@@ -105,12 +148,54 @@ class TimeMap:
                 return
 
     def get_seqnum(self, time):
+        """
+        Guess the sequence number corresponding to a wall-clock time.
+
+        If no information is available, this will return None.
+        """
         for e in self.entries:
             end = e[2] + timedelta(milliseconds = e[1])
             if time <= end:
                 return delta_ms(time, e[2])
 
     def resolve_gaps(self):
+        """
+        Refine the time map based on all available information.
+
+        The wall clock may be adjusted at any time during the record;
+        in general, there is no way to know exactly when this happens.
+        When it does, two consecutive reference timestamps will
+        disagree; for example, we might have
+
+          sequence number     timestamp
+          500000000000        2015-11-05 12:53:20.000 +00:00
+          500000005120        2015-11-05 12:53:27.120 +00:00
+
+        This tells us that, at some time between those two events, the
+        wall clock was adjusted forward by two seconds.  If we then
+        see:
+
+          (unknown)           2015-11-05 12:53:23.800 +00:00
+
+        we can't tell whether that occurs 3.8 seconds after event #1,
+        or 3.32 seconds before event #2.  However, if we also see:
+
+          (unknown)           2015-11-05 12:53:21.900 +00:00
+
+        we can deduce that the two-second adjustment could not
+        possibly have occurred between events #1 and #4, nor between
+        events #4 and #3, and thus it must have been between events #3
+        and #2; so event #4 must have occurred at sequence number
+        500000001900, and event #3 at 500000003800.
+
+        In ambiguous cases, our best guess is that the adjustment
+        occurred between the most distant pair of timestamps - if we
+        only have events #1-#3 above, then all we can say is that it's
+        more likely to have a 3.32-second interval with no events,
+        than to have a 3.8-second interval with no events, and thus
+        the clock adjustment is more likely to have occurred between
+        events #1 and #3.
+        """
         p = None
         for n in self.entries:
             if p and n[3]:
