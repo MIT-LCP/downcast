@@ -22,11 +22,13 @@ import time
 import os
 import re
 import locale
+import ast
 from argparse import ArgumentParser
 from uuid import UUID
 from decimal import Decimal
 
 from .server import DWCDB
+from .db.exceptions import ParameterCountError
 
 ################################################################
 
@@ -201,13 +203,13 @@ def _show_results(cur, colinfo, results, setindex):
             sys.stdout.write(_pad(text, width, leftalign))
         sys.stdout.write(_color0 + '\n')
 
-def _run_query(db, query):
+def _run_query(db, query, params):
     if query is '':
         return
     with db.connect() as conn:
         with conn.cursor() as cur:
             begin = time.monotonic()
-            cur.execute(query)
+            cur.execute(query, params)
 
             more_results = True
             setindex = 0
@@ -267,7 +269,15 @@ def main():
                 while line is not '' and not query.endswith(';'):
                     line = input(' ' * len(opts.server) + '> ')
                     query += '\n' + line
-                _run_query(db, query)
+                params = []
+                while True:
+                    try:
+                        _run_query(db, query, params)
+                        break
+                    except ParameterCountError:
+                        pass
+                    line = input('? ')
+                    params.append(ast.literal_eval(line.strip()))
             except KeyboardInterrupt:
                 print()
             except EOFError:
