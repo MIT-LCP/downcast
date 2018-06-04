@@ -402,8 +402,8 @@ class WaveOutputInfo:
         self.segment_end = start
 
     def write_signals(self, record, start, end, sigdata):
-        signals = sorted(sigdata, key = lambda a: (a.channel,
-                                                   a.base_physio_id,
+        signals = sorted(sigdata, key = lambda a: (a.base_physio_id,
+                                                   a.channel,
                                                    a.physio_id, a))
 
         if (signals != self.segment_signals
