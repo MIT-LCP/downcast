@@ -17,12 +17,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from enum import Enum
-from multiprocessing import Process, Pipe
+from multiprocessing import Process, Pipe, current_process
 import atexit
 import traceback
 import logging
 import cProfile
 import os
+import sys
 
 from .dispatcher import Dispatcher
 
@@ -46,6 +47,7 @@ class ParallelDispatcher:
         self.pending_limit = pending_limit
         self.children = None
         self.dispatcher = Dispatcher(**kwargs)
+        sys.excepthook = _handle_fatal_exception
 
     def add_handler(self, handler):
         """Add a message handler.
@@ -210,22 +212,26 @@ class ChildContext:
         self.pipe = None
 
     def _main(self, name, child_pipe):
-        # Close all of the parent-side pipes that were created
-        # previously (and inherited by the child process.)
-        # Unfortunately we can't simply close all file descriptors, or
-        # even all 'non-inheritable' file descriptors, as that breaks
-        # pymssql.
-        for p in ChildConnector._all_pipes:
-            p.close()
-        ChildConnector._all_pipes = set()
+        try:
+            # Close all of the parent-side pipes that were created
+            # previously (and inherited by the child process.)
+            # Unfortunately we can't simply close all file
+            # descriptors, or even all 'non-inheritable' file
+            # descriptors, as that breaks pymssql.
+            for p in ChildConnector._all_pipes:
+                p.close()
+            ChildConnector._all_pipes = set()
 
-        self.pipe = child_pipe
-        pf = os.environ.get('DOWNCAST_PROFILE_OUT', None)
-        if pf is not None and name is not None:
-            pf = '%s.%s' % (pf, name)
-            cProfile.runctx('self._main1()', globals(), locals(), pf)
-        else:
-            self._main1()
+            self.pipe = child_pipe
+            pf = os.environ.get('DOWNCAST_PROFILE_OUT', None)
+            if pf is not None and name is not None:
+                pf = '%s.%s' % (pf, name)
+                cProfile.runctx('self._main1()', globals(), locals(), pf)
+            else:
+                self._main1()
+        except:
+            _handle_fatal_exception(*sys.exc_info())
+            sys.exit(1)
 
     def _main1(self):
         try:
@@ -300,6 +306,16 @@ class ChildContext:
             logging.warning('ack for an unknown message')
         else:
             self.acks.append(msgid)
+
+
+def _handle_fatal_exception(exc_type, exc_val, exc_tb):
+    if exc_type is not SystemExit:
+        hdr = '-------- %s --------\n' % current_process().name
+        msg = traceback.format_exception(exc_type, exc_val, exc_tb)
+        m = (hdr + ''.join(msg) + '\n').encode(sys.stderr.encoding,
+                                               errors = 'replace')
+        sys.stderr.flush()
+        os.write(sys.stderr.fileno(), m)
 
 class ChildRequest(Enum):
     SYNC_RESPONSE = 0
