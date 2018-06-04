@@ -17,8 +17,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from configparser import ConfigParser
-import pymssql
-import sqlite3
 import warnings
 import os
 
@@ -189,6 +187,7 @@ class DWCDBServer:
         self.dbtype = DWCDB._config.get(servername, 'type', fallback = 'mssql')
 
         if self.dbtype == 'mssql':
+            import pymssql
             self.hostname = DWCDB._config[servername]['hostname']
             self.username = DWCDB._config[servername]['username']
             self.password = DWCDB._config[servername]['password']
@@ -196,9 +195,15 @@ class DWCDBServer:
             self.dialect = 'ms'
             self.paramstyle = pymssql.paramstyle
         elif self.dbtype == 'sqlite':
+            import sqlite3
             self.filename = DWCDB._config[servername]['file']
             self.dialect = 'sqlite'
             self.paramstyle = sqlite3.paramstyle
+        elif self.dbtype == 'bcp':
+            from .db import dwcbcp
+            self.bcpdirs = DWCDB._config[servername]['bcp-path']
+            self.dialect = 'sqlite'
+            self.paramstyle = dwcbcp.paramstyle
         else:
             raise ValueError('unknown database type')
 
@@ -218,10 +223,15 @@ class DWCDBServer:
 
     def connect(self):
         if self.dbtype == 'mssql':
+            import pymssql
             return pymssql.connect(self.hostname, self.username,
                                    self.password, self.database)
         elif self.dbtype == 'sqlite':
+            import sqlite3
             return sqlite3.connect(self.filename)
+        elif self.dbtype == 'bcp':
+            from .db import dwcbcp
+            return dwcbcp.connect(self.bcpdirs.split(':'))
 
 class UnknownAttrError(Exception):
     """Internal exception indicating the object does not exist."""
