@@ -81,6 +81,7 @@ class WaveSampleHandler:
         # If we have already flushed past the end of this message,
         # nothing to do
         if info.flushed_time is not None and msg_end < info.flushed_time:
+            self._write_events(record, msg, attr, msg_start, tps)
             source.ack_message(chn, msg, self)
             return
 
@@ -123,10 +124,27 @@ class WaveSampleHandler:
 
         # If the entire message has now been written, then acknowledge it
         if (info.flushed_time is not None and info.flushed_time >= msg_end):
+            self._write_events(record, msg, attr, msg_start, tps)
             source.ack_message(chn, msg, self)
         # otherwise, check if we are now able to acknowledge older messages
         elif updated:
             source.nack_message(chn, msg, self, replay = True)
+
+    def _write_events(self, record, msg, attr, msg_start, tps):
+        if (msg.paced_pulses
+                or msg.invalid_samples
+                or msg.unavailable_samples):
+            # FIXME: avoid using desc in filename
+            (_, desc) = _get_signal_units_desc(attr)
+            logfile = record.open_log_file('_wq_%s' % desc)
+            for pp in _parse_sample_list(msg.paced_pulses):
+                logfile.append('P%s' % (msg_start + pp * tps))
+            for (is0, is1) in _parse_interval_list(msg.invalid_samples):
+                logfile.append('I%s-%s' % (msg_start + is0 * tps,
+                                           msg_start + (is1 + 1) * tps))
+            for (us0, us1) in _parse_interval_list(msg.unavailable_samples):
+                logfile.append('U%s-%s' % (msg_start + us0 * tps,
+                                           msg_start + (us1 + 1) * tps))
 
     def flush(self):
         for (record, info) in self.info.items():
