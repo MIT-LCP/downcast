@@ -359,7 +359,9 @@ class ArchiveRecord:
                     sn = self.time_map.get_seqnum(ts) or sn
                     if sn0 is None:
                         sn0 = sn
-                    nf.append('%s\t%s' % (sn - sn0, line.strip()))
+                    nf.fp.write(('%s\t' % (sn - sn0)).encode()) # XXX
+                    nf.fp.write(line.strip())                   # XXX
+                    nf.fp.write(b'\n')                          # XXX
 
             if not el.missing():
                 ef = self.open_log_file('enums')
@@ -371,7 +373,9 @@ class ArchiveRecord:
                     sn = self.time_map.get_seqnum(ts) or sn
                     if sn0 is None:
                         sn0 = sn
-                    ef.append('%s\t%s' % (sn - sn0, line.strip()))
+                    ef.fp.write(('%s\t' % (sn - sn0)).encode()) # XXX
+                    ef.fp.write(line.strip())                   # XXX
+                    ef.fp.write(b'\n')                          # XXX
 
             if not al.missing():
                 af = self.open_log_file('alerts')
@@ -380,6 +384,9 @@ class ArchiveRecord:
                         continue
                     ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
                     ts = ts.replace(tzinfo = timezone.utc)
+                    sn = self.time_map.get_seqnum(ts) or sn
                     if sn0 is None:
                         sn0 = sn
-                    af.append('%s\t%s' % (sn - sn0, line.strip()))
+                    af.fp.write(('%s\t' % (sn - sn0)).encode()) # XXX
+                    af.fp.write(line.strip())                   # XXX
+                    af.fp.write(b'\n')                          # XXX
