@@ -140,7 +140,9 @@ _max_align_width = 64
 _align_group_size = 20
 
 def _format_value(val):
-    if isinstance(val, Decimal) or isinstance(val, int):
+    if isinstance(val, bool):
+        return repr(val)
+    elif isinstance(val, Decimal) or isinstance(val, int):
         return '{:n}'.format(val)
     elif isinstance(val, UUID):
         _add_known_uuid(val)
