@@ -255,6 +255,9 @@ class WaveOutputInfo:
         # flushed_time: time at which all signal data has been written
         self.flushed_time = record.get_int_property(['waves', 'flushed_time'])
 
+        # segment_name: name of the currently open segment, if any
+        self.segment_name = record.get_str_property(['waves', 'segment_name'])
+
         # signal_file: name of the currently open signal file, if any
         self.signal_file = record.get_str_property(['waves', 'signal_file'])
 
@@ -311,6 +314,12 @@ class WaveOutputInfo:
     def close_segment(self, record):
         if self.signal_file is not None:
             record.close_file(self.signal_file)
+            if self.segment_name is not None:
+                self._write_header(record, self.segment_name, self.signal_file,
+                                   self.segment_start, self.segment_end,
+                                   self.segment_signals)
+
+        self.segment_name = None
         self.signal_file = None
         self.segment_signals = []
         self.segment_start = None
@@ -321,18 +330,17 @@ class WaveOutputInfo:
         record.set_property(['waves', 'segment_start'], None)
         record.set_property(['waves', 'segment_end'], None)
 
-    def open_segment(self, record, segname, start, signals):
-        self.close_segment(record)
-
-        heaname = segname + '.hea'
-        datname = segname + '.dat'
-
+    def _write_header(self, record, segname, datname, start, end, signals):
         # FIXME: use ArchiveRecord...
+        heaname = segname + '.hea'
         heapath = os.path.join(record.path, heaname)
         self.frame_size = 0
         with open(heapath, 'wt', encoding = 'UTF-8') as hf:
-            hf.write('%s %d %g/1000(%d)\n'
+            hf.write('%s %d %g/1000(%d)'
                      % (segname, len(signals), _ffreq, start))
+            if end is not None:
+                hf.write(' %d' % ((end - start) // _tpf))
+            hf.write('\n')
             for signal in signals:
                 (units, desc) = _get_signal_units_desc(signal)
 
@@ -342,31 +350,41 @@ class WaveOutputInfo:
                 csu = signal.calibration_scaled_upper
                 cal = signal.calibration_abs_lower
                 cau = signal.calibration_abs_upper
-                if (csl != csu and cal != cau and csl and csu and cal and cau):
+                try:
                     gain = (csu - csl) / (cau - cal)
                     baseline = csl - cal * gain
-                else:
-                    gain = 1
+                except (TypeError, ArithmeticError):
+                    gain = 0
                     baseline = 0
 
                 sl = signal.scale_lower
                 su = signal.scale_upper
-                if sl and su:
+                try:
                     d = su - sl
                     adcres = 0
                     while d > 0:
                         d = d // 2
                         adcres += 1
-                    adczero = (su + sl) // 2
-                else:
+                    adczero = (su + sl + 1) // 2
+                except (TypeError, ArithmeticError):
                     adcres = adczero = 0
 
                 hf.write('%s %dx%d %g(%d)/%s %d %d 0 0 0 %s\n'
                          % (datname, _fmt, spf, gain, baseline,
                             units, adcres, adczero, desc))
 
-                self.frame_offset[signal] = self.frame_size
-                self.frame_size += spf
+    def open_segment(self, record, segname, start, signals):
+        self.close_segment(record)
+
+        datname = segname + '.dat'
+
+        self._write_header(record, segname, datname, start, None, signals)
+
+        self.frame_size = 0
+        for signal in signals:
+            spf = -(-_tpf // signal.sample_period) # XXX
+            self.frame_offset[signal] = self.frame_size
+            self.frame_size += spf
 
         sigprop = []
         for attr in signals:
@@ -394,8 +412,10 @@ class WaveOutputInfo:
             })
         record.set_property(['waves', 'signals'], sigprop)
         record.set_property(['waves', 'signal_file'], datname)
+        record.set_property(['waves', 'segment_name'], segname)
         record.set_property(['waves', 'segment_start'], start)
         record.set_property(['waves', 'segment_end'], start)
+        self.segment_name = segname
         self.signal_file = datname
         self.segment_signals = signals
         self.segment_start = start
