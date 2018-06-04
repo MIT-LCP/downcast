@@ -50,17 +50,17 @@ class AlertHandler:
         if msg.announce_time and msg.announce_time > _sane_time:
             ats = msg.announce_time.strftime_utc('%Y%m%d%H%M%S%f')
             logfile.append(ats)
-            logfile.append('+' + lbl)
+            logfile.append('%s+%s' % (msg.severity, lbl))
         if msg.onset_time and msg.onset_time > _sane_time:
             ots = msg.onset_time.strftime_utc('%Y%m%d%H%M%S%f')
             logfile.append(ots)
-            logfile.append('!' + lbl)
+            logfile.append('%s!%s' % (msg.severity, lbl))
         if msg.end_time and msg.end_time > _sane_time:
             ets = msg.end_time.strftime_utc('%Y%m%d%H%M%S%f')
             logfile.append(ets)
-            logfile.append('-' + lbl)
+            logfile.append('%s-%s' % (msg.severity, lbl))
         logfile.append(ts)
-        logfile.append('=' + lbl)
+        logfile.append('%s=%s' % (msg.severity, lbl))
 
         source.ack_message(chn, msg, self)
 
