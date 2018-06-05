@@ -197,6 +197,8 @@ def _sanitize_units(units):
             s += c
         elif c == '°':
             s += 'deg'
+        elif c == 'µ':
+            s += 'u'
         else:
             s += '_'
     return s
