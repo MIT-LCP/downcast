@@ -133,6 +133,10 @@ class WaveSampleHandler:
             info.flush_signals(record)
         self.archive.flush()
 
+    def finalize_record(record):
+        info = WaveOutputInfo(record)
+        info.close_segment(record)
+
 def _parse_sample_list(text):
     """Parse an ASCII string into a list of integers."""
     if text is None:

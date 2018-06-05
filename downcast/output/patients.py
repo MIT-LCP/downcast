@@ -69,6 +69,9 @@ class PatientHandler:
     def flush(self):
         self.archive.flush()
 
+    def finalize_record(record):
+        pass
+
 _escape_chars = list(range(32)) + [127] + [ord(x) for x in ',"\'\\']
 _escape_table = str.maketrans({x: '\\%03o' % x for x in _escape_chars})
 def _escape(s):

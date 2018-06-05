@@ -23,6 +23,16 @@ import json
 from ..timestamp import T, delta_ms
 from .files import ArchiveLogFile, ArchiveBinaryFile
 from .timemap import TimeMap
+from .process import WorkerProcess
+from .waveforms import WaveSampleHandler
+from .enums import EnumerationValueHandler
+from .numerics import NumericValueHandler
+from .alerts import AlertHandler
+from .mapping import PatientMappingHandler
+from .patients import PatientHandler
+
+from datetime import datetime, timezone
+from .log import ArchiveLogReader
 
 def _subdirs(dirname):
     for f in os.listdir(dirname):
@@ -37,6 +47,7 @@ class Archive:
         self.records = {}
         self.split_interval = 60 * 60 * 1000 # ~ one hour
         self.deterministic_output = deterministic_output
+        self.finalization_processes = []
 
         pat = re.compile('\A([A-Za-z0-9-]+)_([0-9a-f-]+)_([-0-9]+)\Z',
                          re.ASCII)
@@ -62,11 +73,33 @@ class Archive:
     def _open_record(self, path, servername, record_id, datestamp):
         rec = self.records.get((servername, record_id))
         if rec is None or rec.datestamp < datestamp:
-            self.records[servername, record_id] = ArchiveRecord(
+            rec = ArchiveRecord(
                 path = path,
                 servername = servername,
                 record_id = record_id,
                 datestamp = datestamp)
+            # If the record has already been finalized, ignore it
+            if not rec.finalized():
+                self.records[servername, record_id] = rec
+                # If the record had begun to be finalized, restart
+                if rec.finalizing():
+                    self._finalize_record(rec)
+
+    def _finalize_record(self, rec):
+        # Mark the record as finalizing - if the program is
+        # interrupted and restarted, we won't write any more data to
+        # this record, but restart finalization immediately
+        rec.set_finalizing()
+        rec.flush(self.deterministic_output)
+
+        # Remove it from the list of active records
+        self.records.pop((rec.servername, rec.record_id), None)
+
+        # Start a child process
+        proc = WorkerProcess(target = rec.finalize,
+                             name = ('finalize-%s' % rec.record_id))
+        proc.start()
+        self.finalization_processes.append((rec.record_id, proc))
 
     def get_record(self, message, sync):
         servername = message.origin.servername
@@ -107,14 +140,16 @@ class Archive:
             else:
                 n = delta_ms(timestamp, end)
                 if n > self.split_interval:
-                    rec.finalize()
-                    del self.records[servername, record_id]
+                    print('%s: splitting between %s and %s'
+                          % (record_id, end, timestamp))
+                    self._finalize_record(rec)
                     rec = None
                 elif n > 0:
                     rec.set_end_time(timestamp)
 
         # Create a new record if needed
         if rec is None:
+            print('%s: new record at %s' % (record_id, timestamp))
             datestamp = message.timestamp.strftime_utc('%Y%m%d-%H%M')
             prefix = record_id[0:self.prefix_length]
             name = '%s_%s_%s' % (servername, record_id, datestamp)
@@ -132,11 +167,17 @@ class Archive:
     def flush(self):
         for rec in self.records.values():
             rec.flush(self.deterministic_output)
+        while self.finalization_processes:
+            (record_id, proc) = self.finalization_processes.pop()
+            proc.join()
+            if proc.exitcode != 0:
+                raise Exception('Failed to finalize record %s' % record_id)
 
     def terminate(self):
-        for rec in self.records.values():
-            rec.finalize()
-        self.records = {}
+        while self.records:
+            (_, rec) = self.records.popitem()
+            print('%s: terminating at %s' % (rec.record_id, rec.end_time()))
+            self._finalize_record(rec)
 
 class ArchiveRecord:
     def __init__(self, path, servername, record_id, datestamp, create = False):
@@ -169,13 +210,28 @@ class ArchiveRecord:
         self._end_time = time
         self.modified = True
 
-    def finalize(self):
-        # FIXME: lots of stuff to do here...
+    def finalized(self):
+        return (self.get_int_property(['finalized']) == 1)
+
+    def finalizing(self):
+        return (self.get_int_property(['finalized']) == 0)
+
+    def set_finalizing(self):
         for f in self.files.values():
             f.close()
-        self.modified = True
-        self.flush()
-        return
+        self.files = {}
+        self.set_property(['finalized'], 0)
+
+    def finalize(self):
+        WaveSampleHandler.finalize_record(self)
+        self._finalize_events()
+        EnumerationValueHandler.finalize_record(self)
+        NumericValueHandler.finalize_record(self)
+        AlertHandler.finalize_record(self)
+        PatientMappingHandler.finalize_record(self)
+        PatientHandler.finalize_record(self)
+        self.set_property(['finalized'], 1)
+        self.flush(True)
 
     def flush(self, deterministic = False):
         for f in self.files.values():
@@ -183,9 +239,9 @@ class ArchiveRecord:
         if self.modified:
             self.set_property(['base_sequence_number'], self._base_seqnum)
             self.set_property(['end_time'], str(self._end_time))
+            self.time_map.write(self.path, '_phi_time_map')
             self._write_state_file('_phi_properties', self.properties,
                                    deterministic = deterministic)
-            self.time_map.write(self.path, '_phi_time_map')
             self.dir_sync()
 
     def dir_sync(self):
@@ -270,3 +326,57 @@ class ArchiveRecord:
         if name in self.files:
             self.files[name].close()
             del self.files[name]
+
+    # XXX
+    def _finalize_events(self):
+        nfn = os.path.join(self.path, '_phi_numerics')
+        efn = os.path.join(self.path, '_phi_enums')
+        afn = os.path.join(self.path, '_phi_alerts')
+
+        with ArchiveLogReader(nfn, allow_missing = True) as nl, \
+             ArchiveLogReader(efn, allow_missing = True) as el, \
+             ArchiveLogReader(afn, allow_missing = True) as al:
+
+            for l in (nl, el, al):
+                for (sn, ts, line) in l.unsorted_items():
+                    ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
+                    ts = ts.replace(tzinfo = timezone.utc)
+                    self.time_map.add_time(ts)
+            self.time_map.resolve_gaps()
+
+            sn0 = self.seqnum0()
+
+            if not nl.missing():
+                nf = self.open_log_file('numerics')
+                for (sn, ts, line) in nl.sorted_items():
+                    if b'\030' in line:
+                        continue
+                    ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
+                    ts = ts.replace(tzinfo = timezone.utc)
+                    sn = self.time_map.get_seqnum(ts) or sn
+                    if sn0 is None:
+                        sn0 = sn
+                    nf.append('%s\t%s' % (sn - sn0, line.strip()))
+
+            if not el.missing():
+                ef = self.open_log_file('enums')
+                for (sn, ts, line) in el.sorted_items():
+                    if b'\030' in line:
+                        continue
+                    ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
+                    ts = ts.replace(tzinfo = timezone.utc)
+                    sn = self.time_map.get_seqnum(ts) or sn
+                    if sn0 is None:
+                        sn0 = sn
+                    ef.append('%s\t%s' % (sn - sn0, line.strip()))
+
+            if not al.missing():
+                af = self.open_log_file('alerts')
+                for (sn, ts, line) in al.sorted_items():
+                    if b'\030' in line:
+                        continue
+                    ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
+                    ts = ts.replace(tzinfo = timezone.utc)
+                    if sn0 is None:
+                        sn0 = sn
+                    af.append('%s\t%s' % (sn - sn0, line.strip()))

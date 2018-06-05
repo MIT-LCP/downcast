@@ -66,3 +66,6 @@ class AlertHandler:
 
     def flush(self):
         self.archive.flush()
+
+    def finalize_record(record):
+        pass
