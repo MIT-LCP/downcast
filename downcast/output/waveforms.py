@@ -163,13 +163,14 @@ def _valid_sample_intervals(msg):
     usl = _parse_interval_list(msg.unavailable_samples)
     cur = 0
     nsamples = len(msg.wave_samples) // 2
-    for (start, end) in sorted(isl + usl):
-        if start <= end and start <= nsamples:
-            if start > cur:
-                yield (cur, start)
-            cur = end + 1
-    if nsamples > cur:
-        yield (cur, nsamples)
+    # for (start, end) in sorted(isl + usl):
+    #     if start <= end and start <= nsamples:
+    #         if start > cur:
+    #             yield (cur, start)
+    #         cur = end + 1
+    # if nsamples > cur:
+    #     yield (cur, nsamples)
+    yield (0, nsamples)
 
 ################################################################
 
