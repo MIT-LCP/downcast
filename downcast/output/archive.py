@@ -178,6 +178,8 @@ class ArchiveRecord:
         return
 
     def flush(self, deterministic = False):
+        for f in self.files.values():
+            f.flush()
         if self.modified:
             self.set_property(['base_sequence_number'], self._base_seqnum)
             self.set_property(['end_time'], str(self._end_time))
