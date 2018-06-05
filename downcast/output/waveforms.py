@@ -419,7 +419,10 @@ class WaveOutputInfo:
                 fn = (t0 + i) // spf
                 sn = (t0 + i) % spf
                 ind = fn * self.frame_size + self.frame_offset[signal] + sn
-                sf.write(ind * 2, samples[2*i:2*i+2])
+                sv = samples[2*i:2*i+2]
+                if sv == b'\0\0':
+                    sv = b'\0\x80'
+                sf.write(ind * 2, sv)
 
         if end > self.segment_end:
             self.segment_end = end
