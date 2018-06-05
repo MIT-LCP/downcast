@@ -93,3 +93,47 @@ class TimeMap:
         # Otherwise, define a new span
         else:
             self.entries.insert(i, [seqnum, seqnum, baset, set()])
+
+    def add_time(self, time):
+        for e in self.entries:
+            start = e[2] + timedelta(milliseconds = e[0])
+            if time < start:
+                e[3].add(time)
+                return
+            end = e[2] + timedelta(milliseconds = e[1])
+            if time <= end:
+                return
+
+    def get_seqnum(self, time):
+        for e in self.entries:
+            end = e[2] + timedelta(milliseconds = e[1])
+            if time <= end:
+                return delta_ms(time, e[2])
+
+    def resolve_gaps(self):
+        p = None
+        for n in self.entries:
+            if p and n[3]:
+                gapstart = p[2] + timedelta(milliseconds = p[1])
+                gapend = n[2] + timedelta(milliseconds = n[1])
+                n[3].add(gapstart)
+                n[3].add(gapend)
+                best = (timedelta(0), gapstart)
+                for d in _differences(sorted(n[3])):
+                    best = max(best, d)
+                tsplit = best[1] + 0.5 * best[0]
+                snp = delta_ms(tsplit, p[2])
+                snn = delta_ms(tsplit, n[2])
+                self.set_time(snp, tsplit)
+                self.set_time(snn, tsplit)
+            p = n
+
+def _differences(k):
+    i = iter(k)
+    try:
+        prev = next(i)
+    except StopIteration:
+        return
+    for cur in i:
+        yield (cur - prev, prev)
+        prev = cur
