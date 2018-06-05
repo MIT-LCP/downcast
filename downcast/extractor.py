@@ -56,6 +56,12 @@ class Extractor:
         self.queue_timestamp[queue] = very_old_timestamp
         if self.dest_dir is not None:
             queue.load_state(self.dest_dir)
+        # XXX
+        if queue.newest_seen_timestamp is not None:
+            self.queue_timestamp[queue] = (queue.newest_seen_timestamp
+                                           + queue.bias())
+            if queue.newest_seen_timestamp > self.current_timestamp:
+                self.current_timestamp = queue.newest_seen_timestamp
 
     def add_handler(self, handler):
         """Add a message handler."""
