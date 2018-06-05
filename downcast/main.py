@@ -185,5 +185,8 @@ def _main_loop(opts, extractor, archive):
 
     if opts.terminate:
         extractor.dispatcher.terminate()
-
-    extractor.flush()
+        extractor.flush()
+        a = Archive(opts.output_dir)
+        a.terminate()
+    else:
+        extractor.flush()
