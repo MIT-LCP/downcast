@@ -126,7 +126,8 @@ def _init_extractor(opts):
     DWCDB.load_config(opts.password_file)
 
     db = DWCDB(opts.server)
-    ex = Extractor(db, opts.state_dir)
+    ex = Extractor(db, opts.state_dir, fatal_exceptions = True,
+                   deterministic_output = True, debug = True)
 
     pmq = PatientMappingQueue('mapping',
                               start_time = opts.start,
