@@ -24,7 +24,6 @@ _sane_time = T('1970-01-01 00:00:00.000 +00:00')
 class AlertHandler:
     def __init__(self, archive):
         self.archive = archive
-        self.files = set()
 
     def send_message(self, chn, msg, source, ttl):
         if not isinstance(msg, AlertMessage):
@@ -41,7 +40,6 @@ class AlertHandler:
 
         # Open or create a log file
         logfile = record.open_log_file('_phi_alerts')
-        self.files.add(logfile)
 
         # Write value to the log file
         sn = msg.sequence_number
@@ -59,7 +57,4 @@ class AlertHandler:
         source.ack_message(chn, msg, self)
 
     def flush(self):
-        for f in self.files:
-            f.flush()
-        self.files = set()
         self.archive.flush()

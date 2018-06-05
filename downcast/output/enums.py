@@ -23,7 +23,6 @@ _del_control = str.maketrans({x: ' ' for x in list(range(32)) + [127]})
 class EnumerationValueHandler:
     def __init__(self, archive):
         self.archive = archive
-        self.files = set()
         self.last_event = {}
 
     def send_message(self, chn, msg, source, ttl):
@@ -48,7 +47,6 @@ class EnumerationValueHandler:
 
         # Open or create a log file
         logfile = record.open_log_file('_phi_enums')
-        self.files.add(logfile)
 
         # Write the sequence number and timestamp to the log file
         # (if they don't differ from the previous event)
@@ -72,7 +70,4 @@ class EnumerationValueHandler:
         source.ack_message(chn, msg, self)
 
     def flush(self):
-        for f in self.files:
-            f.flush()
-        self.files = set()
         self.archive.flush()

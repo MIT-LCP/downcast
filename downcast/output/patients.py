@@ -23,7 +23,6 @@ from ..messages import (PatientBasicInfoMessage,
 class PatientHandler:
     def __init__(self, archive):
         self.archive = archive
-        self.files = set()
 
     def send_message(self, chn, msg, source, ttl):
         if isinstance(msg, PatientBasicInfoMessage):
@@ -64,14 +63,10 @@ class PatientHandler:
 
     def _log_info(self, record, msg, key, value):
         logfile = record.open_log_file('_phi_patient_info')
-        self.files.add(logfile)
         logfile.append('%s,%s,%s' % (msg.timestamp, _escape(key),
                                      _escape(str(value))))
 
     def flush(self):
-        for f in self.files:
-            f.flush()
-        self.files = set()
         self.archive.flush()
 
 _escape_chars = list(range(32)) + [127] + [ord(x) for x in ',"\'\\']
