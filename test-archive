@@ -20,7 +20,7 @@ DWCDB.load_config('server.conf')
 
 def test(dest_dir, iterations):
     db = DWCDB('demo')
-    ex = Extractor(db, dest_dir, fatal_exceptions = True)
+    ex = Extractor(db, dest_dir, fatal_exceptions = True, debug = True)
     arx = Archive(dest_dir)
     nh = NumericValueHandler(arx)
     ex.add_handler(nh)
