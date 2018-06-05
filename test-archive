@@ -40,10 +40,8 @@ def test(dest_dir, iterations):
 #    ex.add_queue(PatientDateAttributeQueue('dates'))
 
     st = T('2016-01-28 14:00:00.000 -05:00')
-#    ex.add_queue(NumericValueQueue('numerics', start_time = st,
-#                                   messages_per_batch = 100,
-#                                   patient_mapping_queue = pmq,
-#                                   patient_mapping_delay = pmdelay))
+    ex.add_queue(NumericValueQueue('numerics', start_time = st,
+                                   messages_per_batch = 100))
     ex.add_queue(WaveSampleQueue('waves', start_time = st,
                                  messages_per_batch = 100))
     for _ in range(iterations):
