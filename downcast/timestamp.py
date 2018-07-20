@@ -127,3 +127,4 @@ def delta_ms(time_a, time_b):
             + (delta.microseconds // 1000))
 
 very_old_timestamp = T('1800-01-01 00:00:00.000 +00:00')
+dwc_epoch = T('2000-01-01 12:00:00.000 +00:00')
