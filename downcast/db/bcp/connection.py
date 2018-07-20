@@ -537,7 +537,6 @@ class BCPTableIterator:
         self._infilenum = None
         self._inbuf = b''
         self._next_row = None
-        self._prev_location = None
 
     def _set_input_pos(self, filenum, offset):
         self._infilenum = filenum
