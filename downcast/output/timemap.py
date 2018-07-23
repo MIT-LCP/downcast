@@ -153,10 +153,12 @@ class TimeMap:
 
         If no information is available, this will return None.
         """
-        for e in self.entries:
+        for e in self.entries[:-1]:
             end = e[2] + timedelta(milliseconds = e[1])
             if time <= end:
                 return delta_ms(time, e[2])
+        if self.entries:
+            return delta_ms(time, self.entries[-1][2])
 
     def resolve_gaps(self):
         """
