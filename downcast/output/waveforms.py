@@ -43,7 +43,7 @@ class WaveSampleHandler:
             return
 
         # Look up the corresponding record
-        record = self.archive.get_record(msg, (ttl <= 0))
+        record = self.archive.get_record(msg)
         if record is None:
             # Record not yet available - hold message in pending and
             # continue processing

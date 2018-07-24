@@ -27,7 +27,7 @@ class PatientHandler:
     def send_message(self, chn, msg, source, ttl):
         if isinstance(msg, PatientBasicInfoMessage):
             source.nack_message(chn, msg, self)
-            record = self.archive.get_record(msg, (ttl <= 0))
+            record = self.archive.get_record(msg)
             if record is None:
                 return
             self._log_info(record, msg, 'BedLabel', msg.bed_label)
@@ -48,14 +48,14 @@ class PatientHandler:
 
         elif isinstance(msg, PatientDateAttributeMessage):
             source.nack_message(chn, msg, self)
-            record = self.archive.get_record(msg, (ttl <= 0))
+            record = self.archive.get_record(msg)
             if record is None:
                 return
             self._log_info(record, msg, 'd:%s' % msg.name, msg.value)
             source.ack_message(chn, msg, self)
         elif isinstance(msg, PatientStringAttributeMessage):
             source.nack_message(chn, msg, self)
-            record = self.archive.get_record(msg, (ttl <= 0))
+            record = self.archive.get_record(msg)
             if record is None:
                 return
             self._log_info(record, msg, 's:%s' % msg.name, msg.value)

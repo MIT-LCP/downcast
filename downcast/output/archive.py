@@ -101,18 +101,16 @@ class Archive:
         proc.start()
         self.finalization_processes.append((rec.record_id, proc))
 
-    def get_record(self, message, sync):
+    def get_record(self, message):
         servername = message.origin.servername
 
         mapping_id = getattr(message, 'mapping_id', None)
         if mapping_id is not None:
-            patient_id = message.origin.get_patient_id(mapping_id, sync)
+            patient_id = message.origin.get_patient_id(mapping_id, True)
             if patient_id is not None:
                 record_id = str(patient_id)
-            elif sync:
-                record_id = str(mapping_id)
             else:
-                return None
+                record_id = str(mapping_id)
         else:
             patient_id = message.patient_id
             record_id = str(patient_id)
