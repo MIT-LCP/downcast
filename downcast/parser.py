@@ -60,6 +60,16 @@ class MessageParser:
             qstr += (' LIMIT %d' % limit)
         return (qstr, tuple(params))
 
+    def parse(self, origin, cursor):
+        for (query, handler) in self.queries():
+            cursor.execute(*query)
+            row = cursor.fetchone()
+            while row is not None:
+                msg = handler(origin, row)
+                if msg is not None:
+                    yield msg
+                row = cursor.fetchone()
+
 class SimpleMessageParser(MessageParser):
     """Abstract class for parsing single-row messages.
 
