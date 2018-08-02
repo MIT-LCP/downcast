@@ -35,6 +35,7 @@ class MessageParser:
     def __init__(self, dialect = 'ms', paramstyle = 'format'):
         self.dialect = dialect
         self.paramstyle = paramstyle
+        self.client_side_sort = False
         if paramstyle == 'qmark':
             self._pmark = '?'
         elif paramstyle == 'format' or paramstyle == 'pyformat':
@@ -63,12 +64,20 @@ class MessageParser:
     def parse(self, origin, cursor):
         for (query, handler) in self.queries():
             cursor.execute(*query)
-            row = cursor.fetchone()
-            while row is not None:
-                msg = handler(origin, row)
-                if msg is not None:
-                    yield msg
+            if self.client_side_sort:
+                rows = cursor.fetchall()
+                self.sort_rows(rows)
+                for row in rows:
+                    msg = handler(origin, row)
+                    if msg is not None:
+                        yield msg
+            else:
                 row = cursor.fetchone()
+                while row is not None:
+                    msg = handler(origin, row)
+                    if msg is not None:
+                        yield msg
+                    row = cursor.fetchone()
 
 class SimpleMessageParser(MessageParser):
     """Abstract class for parsing single-row messages.
@@ -102,13 +111,20 @@ class SimpleMessageParser(MessageParser):
                 indices[name] = len(columns)
                 columns.append(name)
             return None
+
+        order = self.order()
+        if self.client_side_sort and order is not None:
+            # ensure that the order column is first
+            add_column(order, None, None)
+            order = None
+
         self.parse_columns(None, add_column)
 
         query = self._gen_query(limit = self.limit,
                                 table = self.table(),
                                 columns = columns,
                                 constraints = self._constraints,
-                                order = self.order())
+                                order = order)
 
         def handle_row(origin, row):
             def parse_column(name, conv, mandatory = False):
