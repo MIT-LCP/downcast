@@ -62,14 +62,7 @@ class DWCDB:
             else:
                 tmpconn = self._server.connect()
                 cur = tmpcur = tmpconn.cursor()
-            for (query, handler) in parser.queries():
-                cur.execute(*query)
-                row = cur.fetchone()
-                while row is not None:
-                    msg = handler(self, row)
-                    if msg is not None:
-                        yield msg
-                    row = cur.fetchone()
+            yield from parser.parse(self, cur)
         finally:
             if tmpcur is not None:
                 tmpcur.close()
