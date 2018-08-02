@@ -58,7 +58,7 @@ class T(datetime):
 
         m = T._pattern.match(val)
         if m is None:
-            raise ValueError('malformed timestamp string')
+            raise ValueError('malformed timestamp string %r' % (val,))
 
         second = int(m.group(6))
         microsecond = round(float(m.group(7)) * 1000000)
