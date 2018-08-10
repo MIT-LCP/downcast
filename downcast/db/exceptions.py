@@ -42,7 +42,9 @@ class ProgrammingError(DatabaseError):
 
 class ParameterCountError(ProgrammingError):
     """Exception caused by supplying the wrong number of query parameters."""
-    pass
+    def __init__(self, message, context = None):
+        ProgrammingError.__init__(self, message)
+        self.context = context
 
 class DataError(DatabaseError):
     """Exception caused by an error in processed data."""

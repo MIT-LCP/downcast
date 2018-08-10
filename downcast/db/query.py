@@ -53,7 +53,10 @@ class SimpleQueryParser:
         try:
             t.value = next(self._param_iter)
         except StopIteration:
-            raise ParameterCountError('not enough parameters for query')
+            c = None
+            if self._constraint_pos is not None:
+                c = self._input[self._constraint_pos:self._lexer.lexpos]
+            raise ParameterCountError('not enough parameters for query', c)
         return t
 
     def t_identifier(self, t):
@@ -103,6 +106,7 @@ class SimpleQueryParser:
     def p_column(self, p):
         """column : identifier"""
         p[0] = p[1]
+        self._column_pos = p.lexpos(1)
 
     def p_table(self, p):
         """
@@ -129,13 +133,19 @@ class SimpleQueryParser:
 
     def p_constraint(self, p):
         """
-        constraint : column '=' PARAM
-                   | column '<' PARAM
-                   | column '>' PARAM
-                   | column LE PARAM
-                   | column GE PARAM
+        constraint : constraint_column '=' PARAM
+                   | constraint_column '<' PARAM
+                   | constraint_column '>' PARAM
+                   | constraint_column LE PARAM
+                   | constraint_column GE PARAM
         """
         p[0] = Constraint(column = p[1], relation = p[2], value = p[3])
+        self._constraint_pos = None
+
+    def p_constraint_column(self, p):
+        """constraint_column : column"""
+        p[0] = p[1]
+        self._constraint_pos = self._column_pos
 
     def p_order(self, p):
         """order : ORDER BY column"""
@@ -172,6 +182,7 @@ class SimpleQueryParser:
     def parse(self, statement, params):
         self._input = statement
         self._param_iter = iter(params)
+        self._constraint_pos = None
         q = self._parser.parse(statement, lexer = self._lexer)
         try:
             next(self._param_iter)
