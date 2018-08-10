@@ -285,7 +285,7 @@ def main():
                     line = input('? ')
                     params.append(ast.literal_eval(line.strip()))
             except KeyboardInterrupt:
-                print()
+                print(_color0)
             except EOFError:
                 print()
                 return
