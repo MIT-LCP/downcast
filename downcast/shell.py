@@ -203,36 +203,35 @@ def _show_results(cur, colinfo, results, setindex):
             sys.stdout.write(_pad(text, width, leftalign))
         sys.stdout.write(_color0 + '\n')
 
-def _run_query(db, query, params):
+def _run_query(conn, query, params):
     if query is '':
         return
-    with db.connect() as conn:
-        with conn.cursor() as cur:
-            begin = time.monotonic()
-            cur.execute(query, params)
+    with conn.cursor() as cur:
+        begin = time.monotonic()
+        cur.execute(query, params)
 
-            more_results = True
-            setindex = 0
-            while more_results:
-                colinfo = []
-                headers = True
-                results = []
+        more_results = True
+        setindex = 0
+        while more_results:
+            colinfo = []
+            headers = True
+            results = []
+            row = cur.fetchone()
+            while row is not None:
+                results.append(row)
+                if len(results) >= _align_group_size:
+                    _show_results(cur, colinfo, results, setindex)
+                    results = []
                 row = cur.fetchone()
-                while row is not None:
-                    results.append(row)
-                    if len(results) >= _align_group_size:
-                        _show_results(cur, colinfo, results, setindex)
-                        results = []
-                    row = cur.fetchone()
-                _show_results(cur, colinfo, results, setindex)
-                more_results = cur.nextset()
-                setindex += 1
-                if more_results:
-                    print()
+            _show_results(cur, colinfo, results, setindex)
+            more_results = cur.nextset()
+            setindex += 1
+            if more_results:
+                print()
 
-            end = time.monotonic()
-            print('(%d rows; %.3f seconds)' % (cur.rowcount, end - begin))
-            print()
+        end = time.monotonic()
+        print('(%d rows; %.3f seconds)' % (cur.rowcount, end - begin))
+        print()
 
 ################################################################
 
@@ -248,6 +247,7 @@ def main():
     DWCDB.load_config(opts.password_file)
 
     db = DWCDB(opts.server)
+    conn = None
 
     readline.set_completer_delims(' \t\n()[]=<>-+*?,')
     readline.parse_and_bind('tab: complete')
@@ -270,12 +270,18 @@ def main():
                     line = input(' ' * len(opts.server) + '> ')
                     query += '\n' + line
                 params = []
+                if conn is None:
+                    conn = db.connect()
                 while True:
                     try:
-                        _run_query(db, query, params)
+                        _run_query(conn, query, params)
                         break
                     except ParameterCountError:
                         pass
+                    except:
+                        conn.close()
+                        conn = None
+                        raise
                     line = input('? ')
                     params.append(ast.literal_eval(line.strip()))
             except KeyboardInterrupt:
