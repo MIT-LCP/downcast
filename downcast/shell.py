@@ -276,13 +276,14 @@ def main():
                     try:
                         _run_query(conn, query, params)
                         break
-                    except ParameterCountError:
+                    except ParameterCountError as e:
+                        pprompt = (e.context or '?') + ' '
                         pass
                     except:
                         conn.close()
                         conn = None
                         raise
-                    line = input('? ')
+                    line = input(pprompt)
                     params.append(ast.literal_eval(line.strip()))
             except KeyboardInterrupt:
                 print(_color0)
