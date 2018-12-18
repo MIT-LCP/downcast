@@ -21,6 +21,8 @@ import sys
 import cProfile
 from multiprocessing import Process
 
+from ..util import setproctitle
+
 class WorkerProcess(Process):
     def __init__(self, name = None, keep_files = None, **kwargs):
         Process.__init__(self, name = name, **kwargs)
@@ -44,9 +46,12 @@ class WorkerProcess(Process):
                 except OSError:
                     pass
 
+        name = self.name
+        if name is not None:
+            setproctitle('downcast:%s' % (name,))
+
         # Invoke the target function, with profiling if enabled
         pf = os.environ.get('DOWNCAST_PROFILE_OUT', None)
-        name = self.name
         if pf is not None and name is not None:
             pf = '%s.%s' % (pf, name)
             cProfile.runctx('Process.run(self)', globals(), locals(), pf)

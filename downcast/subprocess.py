@@ -26,6 +26,7 @@ import os
 import sys
 
 from .dispatcher import Dispatcher
+from .util import setproctitle
 
 class ParallelDispatcher:
     """Object that routes messages to a set of child processes.
@@ -221,6 +222,9 @@ class ChildContext:
             for p in ChildConnector._all_pipes:
                 p.close()
             ChildConnector._all_pipes = set()
+
+            if name is not None:
+                setproctitle('downcast:%s' % (name,))
 
             self.pipe = child_pipe
             pf = os.environ.get('DOWNCAST_PROFILE_OUT', None)
