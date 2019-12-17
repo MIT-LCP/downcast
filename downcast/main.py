@@ -18,6 +18,7 @@
 
 import sys
 import os
+import resource
 from argparse import ArgumentParser, ArgumentTypeError
 from datetime import timedelta
 
@@ -38,6 +39,11 @@ from .output.mapping import PatientMappingHandler
 from .output.patients import PatientHandler
 
 def main(args = None):
+    (_, n) = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if n != resource.RLIM_INFINITY and n < 4096:
+        sys.exit('RLIMIT_NOFILE too low (%d)' % (n,))
+    resource.setrlimit(resource.RLIMIT_NOFILE, (n, n))
+
     opts = _parse_cmdline(args)
     extractor = _init_extractor(opts)
     archive = _init_archive(opts, extractor)
