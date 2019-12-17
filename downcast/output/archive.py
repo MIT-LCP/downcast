@@ -17,6 +17,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import sys
 import re
 import json
 
@@ -140,6 +141,7 @@ class Archive:
                 if n > self.split_interval:
                     print('%s: splitting between %s and %s'
                           % (record_id, end, timestamp))
+                    sys.stdout.flush()
                     self._finalize_record(rec)
                     rec = None
                 elif n > 0:
@@ -148,6 +150,7 @@ class Archive:
         # Create a new record if needed
         if rec is None:
             print('%s: new record at %s' % (record_id, timestamp))
+            sys.stdout.flush()
             datestamp = message.timestamp.strftime_utc('%Y%m%d-%H%M')
             prefix = record_id[0:self.prefix_length]
             name = '%s_%s_%s' % (servername, record_id, datestamp)
@@ -175,6 +178,7 @@ class Archive:
         while self.records:
             (_, rec) = self.records.popitem()
             print('%s: terminating at %s' % (rec.record_id, rec.end_time()))
+            sys.stdout.flush()
             self._finalize_record(rec)
 
 class ArchiveRecord:
