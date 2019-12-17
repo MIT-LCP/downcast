@@ -141,10 +141,12 @@ else:
 _max_align_width = 64
 _align_group_size = 20
 
-def _format_value(val):
+def _format_value(val, desc=None):
     if isinstance(val, bool):
         return repr(val)
     elif isinstance(val, Decimal) or isinstance(val, int):
+        if desc == 'Color' and val < 0 and val >= -16777216:
+            return '#%06x' % (val + 16777216)
         return '{:n}'.format(val)
     elif isinstance(val, UUID):
         _add_known_uuid(val)
@@ -171,14 +173,14 @@ def _show_results(cur, colinfo, results, setindex):
     headers = (len(colinfo) == 0)
     if headers:
         for desc in cur.description:
-            colinfo.append([len(desc[0]), None])
+            colinfo.append([len(desc[0]), None, desc[0]])
     table = []
     for row in results:
         while len(colinfo) < len(row):
-            colinfo.append([0, None])
+            colinfo.append([0, None, ''])
         tabrow = []
         for (i, value) in enumerate(row):
-            text = _format_value(value)
+            text = _format_value(value, colinfo[i][2])
             width = len(text)
             if width < _max_align_width:
                 colinfo[i][0] = max(colinfo[i][0], width)
@@ -187,19 +189,18 @@ def _show_results(cur, colinfo, results, setindex):
             tabrow.append(text)
         table.append(tabrow)
     if headers:
-        for (i, desc) in enumerate(cur.description):
+        for (i, (width, leftalign, label)) in enumerate(colinfo):
             if i > 0:
                 sys.stdout.write(' ')
             sys.stdout.write(_hcolor[(i + setindex) % len(_hcolor)])
-            (width, leftalign) = colinfo[i]
-            sys.stdout.write(_pad(desc[0], width, leftalign))
+            sys.stdout.write(_pad(label, width, leftalign))
         sys.stdout.write(_color0 + '\n')
     for tabrow in table:
         for (i, text) in enumerate(tabrow):
             if i > 0:
                 sys.stdout.write(' ')
             sys.stdout.write(_vcolor[(i + setindex) % len(_vcolor)])
-            (width, leftalign) = colinfo[i]
+            (width, leftalign, _) = colinfo[i]
             sys.stdout.write(_pad(text, width, leftalign))
         sys.stdout.write(_color0 + '\n')
 
