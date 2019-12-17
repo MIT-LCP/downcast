@@ -169,11 +169,16 @@ def _pad(text, width, leftalign):
     else:
         return text.rjust(width)
 
-def _show_results(cur, colinfo, results, setindex):
+def _show_results(cur, colinfo, results, setindex, transpose=False):
     headers = (len(colinfo) == 0)
+    headerwidth = 0
     if headers:
         for desc in cur.description:
-            colinfo.append([len(desc[0]), None, desc[0]])
+            if transpose:
+                colinfo.append([0, None, desc[0]])
+                headerwidth = max(headerwidth, len(desc[0]))
+            else:
+                colinfo.append([len(desc[0]), None, desc[0]])
     table = []
     for row in results:
         while len(colinfo) < len(row):
@@ -188,25 +193,47 @@ def _show_results(cur, colinfo, results, setindex):
                 colinfo[i][1] = _value_alignment(value)
             tabrow.append(text)
         table.append(tabrow)
-    if headers:
-        for (i, (width, leftalign, label)) in enumerate(colinfo):
-            if i > 0:
-                sys.stdout.write(' ')
+
+    if transpose:
+        cellwidth = max(ci[0] for ci in colinfo)
+        for (i, (_, leftalign, label)) in enumerate(colinfo):
             sys.stdout.write(_hcolor[(i + setindex) % len(_hcolor)])
-            sys.stdout.write(_pad(label, width, leftalign))
-        sys.stdout.write(_color0 + '\n')
-    for tabrow in table:
-        for (i, text) in enumerate(tabrow):
-            if i > 0:
-                sys.stdout.write(' ')
+            sys.stdout.write(_pad(label, headerwidth, True))
+            sys.stdout.write(_color0)
             sys.stdout.write(_vcolor[(i + setindex) % len(_vcolor)])
-            (width, leftalign, _) = colinfo[i]
-            sys.stdout.write(_pad(text, width, leftalign))
-        sys.stdout.write(_color0 + '\n')
+            for tabrow in table:
+                try:
+                    text = tabrow[i]
+                except IndexError:
+                    text = ''
+                sys.stdout.write(' ')
+                sys.stdout.write(_pad(text, cellwidth, leftalign))
+            sys.stdout.write(_color0 + '\n')
+    else:
+        if headers:
+            for (i, (width, leftalign, label)) in enumerate(colinfo):
+                if i > 0:
+                    sys.stdout.write(' ')
+                sys.stdout.write(_hcolor[(i + setindex) % len(_hcolor)])
+                sys.stdout.write(_pad(label, width, leftalign))
+            sys.stdout.write(_color0 + '\n')
+        for tabrow in table:
+            for (i, text) in enumerate(tabrow):
+                if i > 0:
+                    sys.stdout.write(' ')
+                sys.stdout.write(_vcolor[(i + setindex) % len(_vcolor)])
+                (width, leftalign, _) = colinfo[i]
+                sys.stdout.write(_pad(text, width, leftalign))
+            sys.stdout.write(_color0 + '\n')
 
 def _run_query(conn, query, params):
     if query is '':
         return
+    if re.match(r'@transpose\s', query):
+        transpose = True
+        query = query[len('@transpose'):]
+    else:
+        transpose = False
     with conn.cursor() as cur:
         begin = time.monotonic()
         cur.execute(query, params)
@@ -221,10 +248,10 @@ def _run_query(conn, query, params):
             while row is not None:
                 results.append(row)
                 if len(results) >= _align_group_size:
-                    _show_results(cur, colinfo, results, setindex)
+                    _show_results(cur, colinfo, results, setindex, transpose)
                     results = []
                 row = cur.fetchone()
-            _show_results(cur, colinfo, results, setindex)
+            _show_results(cur, colinfo, results, setindex, transpose)
             more_results = cur.nextset()
             setindex += 1
             if more_results:
