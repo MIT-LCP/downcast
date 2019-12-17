@@ -174,7 +174,10 @@ def _init_archive(opts, extractor):
     extractor.add_handler(EnumerationValueHandler(a))
     extractor.add_handler(AlertHandler(a))
     extractor.add_handler(PatientMappingHandler(a))
-    extractor.add_handler(PatientHandler(a))
+
+    # FIXME: Handling patient messages is disabled for now - it causes
+    # archive to split records unnecessarily.
+    #extractor.add_handler(PatientHandler(a))
 
     # Create or refresh state files, and fail if they're not writable
     extractor.flush()
