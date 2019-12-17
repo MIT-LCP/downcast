@@ -189,8 +189,16 @@ def _main_loop(opts, extractor, archive):
     if opts.init:
         return
 
-    while opts.live or not extractor.idle():
-        extractor.run()
+    try:
+        n = 500
+        while opts.live or not extractor.idle():
+            extractor.run()
+            n -= 1
+            if n <= 0:
+                extractor.flush()
+                n = 500
+    finally:
+        extractor.flush()
 
     if opts.terminate:
         extractor.dispatcher.terminate()
