@@ -342,7 +342,22 @@ class ArchiveRecord:
              ArchiveLogReader(efn, allow_missing = True) as el, \
              ArchiveLogReader(afn, allow_missing = True) as al:
 
-            for l in (nl, el, al):
+            # Scan the numerics log file; make a list of all non-null
+            # numerics, and add timestamps to the time map
+            all_numerics = set()
+            for (sn, ts, line) in nl.unsorted_items():
+                ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
+                ts = ts.replace(tzinfo = timezone.utc)
+                self.time_map.add_time(ts)
+                if b'\030' not in line:
+                    parts = line.rstrip(b'\n').split(b'\t')
+                    # ignore nulls
+                    if len(parts) > 1 and parts[1]:
+                        all_numerics.add(parts[0])
+
+            # Scan the enums and alerts log files, and add timestamps
+            # to the time map
+            for l in (el, al):
                 for (sn, ts, line) in l.unsorted_items():
                     ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
                     ts = ts.replace(tzinfo = timezone.utc)
@@ -352,18 +367,50 @@ class ArchiveRecord:
             sn0 = self.seqnum0()
 
             if not nl.missing():
-                nf = self.open_log_file('numerics')
+                num_columns = sorted(all_numerics)
+                num_index = {n: i + 1 for i, n in enumerate(num_columns)}
+
+                nf = self.open_log_file('numerics.csv')
+                row = [b'"time"']
+                for name in num_columns:
+                    # FIXME: need to escape "
+                    row.append(b'"' + name + b'"')
+                cur_ts = None
+                cur_sn = None
+                cur_time = None
                 for (sn, ts, line) in nl.sorted_items():
                     if b'\030' in line:
                         continue
-                    ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
-                    ts = ts.replace(tzinfo = timezone.utc)
-                    sn = self.time_map.get_seqnum(ts) or sn
-                    if sn0 is None:
-                        sn0 = sn
-                    nf.fp.write(('%s\t' % (sn - sn0)).encode()) # XXX
-                    nf.fp.write(line.strip())                   # XXX
-                    nf.fp.write(b'\n')                          # XXX
+                    parts = line.rstrip(b'\n').split(b'\t')
+                    # ignore nulls
+                    if len(parts) < 2 or not parts[1]:
+                        continue
+
+                    # determine new time value
+                    if ts == cur_ts and sn == cur_sn:
+                        time = cur_values[0]
+                    else:
+                        ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
+                        ts = ts.replace(tzinfo = timezone.utc)
+                        sn = self.time_map.get_seqnum(ts) or sn
+                        if sn0 is None:
+                            sn0 = sn
+                        # Time measured in counter ticks, ick.
+                        # Better would probably be to use (real) seconds
+                        time = str(sn - sn0).encode()
+                        cur_ts = ts
+                        cur_sn = sn
+                        cur_time = time
+
+                    # write out a complete row if the time value has changed
+                    if time != row[0]:
+                        nf.fp.write(b','.join(row))
+                        nf.fp.write(b'\n')
+                        row = [time] + [b''] * len(all_numerics)
+                    row[num_index[parts[0]]] = parts[1]
+                # write the final row
+                nf.fp.write(b','.join(row))
+                nf.fp.write(b'\n')
 
             if not el.missing():
                 ef = self.open_log_file('enums')
