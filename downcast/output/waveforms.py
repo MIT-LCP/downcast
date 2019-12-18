@@ -385,17 +385,27 @@ class WaveOutputInfo:
                     gain = 0
                     baseline = 0
 
+                # scale_lower/scale_upper don't seem to represent the
+                # actual input range.  Let's just assume that the
+                # input range is either 0 to 2^n-1, or -2^(n-1) to
+                # 2^(n-1)-1.
                 sl = signal.scale_lower
                 su = signal.scale_upper
-                try:
-                    d = su - sl
-                    adcres = 0
-                    while d > 0:
-                        d = d // 2
-                        adcres += 1
-                    adczero = (su + sl + 1) // 2
-                except (TypeError, ArithmeticError):
+                if sl is None or su is None or sl >= su:
                     adcres = adczero = 0
+                else:
+                    adcres = 1
+                    if sl < 0:
+                        adcmin = -1
+                        adcmax = 1
+                    else:
+                        adcmin = 0
+                        adcmax = 2
+                    while su >= adcmax or sl < adcmin:
+                        adcmin *= 2
+                        adcmax *= 2
+                    adczero = (adcmin + adcmax) // 2
+
                 if gain == 0:
                     gain = (1 << adcres)
 
