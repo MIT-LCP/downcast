@@ -387,10 +387,17 @@ class WaveOutputInfo:
                     adczero = (su + sl + 1) // 2
                 except (TypeError, ArithmeticError):
                     adcres = adczero = 0
+                if gain == 0:
+                    gain = (1 << adcres)
 
-                hf.write('%s %dx%d %g(%d)/%s %d %d 0 0 0 %s\n'
-                         % (datname, _fmt, spf, gain, baseline,
-                            units, adcres, adczero, desc))
+                hf.write('%s %d' % (datname, _fmt))
+                if spf > 1:
+                    hf.write('x%d' % spf)
+                hf.write(' %g' % gain)
+                if baseline != adczero:
+                    hf.write('(%d)' % baseline)
+                hf.write('/%s %d %d 0 0 0 %s\n'
+                         % (units, adcres, adczero, desc))
 
     def open_segment(self, record, segname, start, signals):
         self.close_segment(record)
