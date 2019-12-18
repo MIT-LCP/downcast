@@ -17,6 +17,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from configparser import ConfigParser
+import logging
 import warnings
 import os
 
@@ -40,6 +41,10 @@ class DWCDB:
         self.servername = servername
         self.dialect = self._server.dialect
         self.paramstyle = self._server.paramstyle
+        self._warned_mapping = False
+        self._warned_wave = False
+        self._warned_numeric = False
+        self._warned_enum = False
 
     def __repr__(self):
         return ('%s(%r)' % (self.__class__.__name__, self.servername))
@@ -82,6 +87,9 @@ class DWCDB:
         try:
             v = self._parse_attr(p, sync)
         except UnknownAttrError:
+            if not self._warned_wave:
+                logging.warning('unknown wave ID: %s' % wave_id)
+                self._warned_wave = True
             v = undefined_wave
         except DBSyntaxError as e:
             warnings.warn(e.warning(), stacklevel = 2)
@@ -102,6 +110,9 @@ class DWCDB:
         try:
             v = self._parse_attr(p, sync)
         except UnknownAttrError:
+            if not self._warned_numeric:
+                logging.warning('unknown numeric ID: %s' % numeric_id)
+                self._warned_numeric = True
             v = undefined_numeric
         except DBSyntaxError as e:
             warnings.warn(e.warning(), stacklevel = 2)
@@ -122,6 +133,9 @@ class DWCDB:
         try:
             v = self._parse_attr(p, sync)
         except UnknownAttrError:
+            if not self._warned_enum:
+                logging.warning('unknown enumeration ID: %s' % enumeration_id)
+                self._warned_enum = True
             v = undefined_enumeration
         except DBSyntaxError as e:
             warnings.warn(e.warning(), stacklevel = 2)
@@ -144,6 +158,9 @@ class DWCDB:
         try:
             v = self._parse_attr(p, True)
         except UnknownAttrError:
+            if not self._warned_mapping:
+                logging.warning('unknown mapping ID: %s' % mapping_id)
+                self._warned_mapping = True
             return None
         except DBSyntaxError as e:
             warnings.warn(e.warning(), stacklevel = 2)
@@ -170,7 +187,7 @@ class DWCDB:
         for msg in self.get_messages(parser, connection = conn):
             results.append(msg)
         if len(results) > 1:
-            self._log_warning('multiple results found for %r' % parser)
+            logging.warning('multiple results found for %r' % parser)
         elif len(results) == 0:
             raise UnknownAttrError()
         return results[0]
