@@ -72,6 +72,8 @@ class WaveSampleHandler:
         s0 = record.seqnum0()
         if s0 is None:
             record.set_seqnum0(msg.sequence_number)
+            # XXX This should maybe be done more cleanly...
+            record.flush(self.archive.deterministic_output)
             msg_start = 0
         else:
             msg_start = msg.sequence_number - s0
