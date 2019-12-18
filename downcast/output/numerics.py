@@ -17,8 +17,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from ..messages import NumericValueMessage
-
-_del_control = str.maketrans({x: ' ' for x in list(range(32)) + [127]})
+from ..util import string_to_ascii
 
 class NumericValueHandler:
     def __init__(self, archive):
@@ -60,7 +59,7 @@ class NumericValueHandler:
         self.last_event[record] = (sn, ts)
 
         # Write the value to the log file
-        lbl = attr.sub_label.translate(_del_control)
+        lbl = string_to_ascii(attr.sub_label)
         val = msg.value
         if val is None:
             val = ''
