@@ -18,6 +18,7 @@
 
 from ..messages import AlertMessage
 from ..timestamp import (T, delta_ms)
+from ..util import string_to_ascii
 
 _sane_time = T('1970-01-01 00:00:00.000 +00:00')
 
@@ -44,7 +45,7 @@ class AlertHandler:
         # Write value to the log file
         sn = msg.sequence_number
         ts = msg.timestamp.strftime_utc('%Y%m%d%H%M%S%f')
-        lbl = msg.label
+        lbl = string_to_ascii(msg.label)
 
         logfile.append('S%s' % sn)
         if msg.announce_time and msg.announce_time > _sane_time:
