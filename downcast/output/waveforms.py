@@ -120,6 +120,7 @@ class WaveSampleHandler:
                 break
             info.write_signals(record, start, end, sigdata)
             info.flushed_time = end
+            record.set_property(['waves', 'flushed_time'], info.flushed_time)
             updated = True
 
         # If the entire message has now been written, then acknowledge it
@@ -147,8 +148,6 @@ class WaveSampleHandler:
                                            msg_start + (us1 + 1) * tps))
 
     def flush(self):
-        for (record, info) in self.info.items():
-            info.flush_signals(record)
         self.archive.flush()
 
     def finalize_record(record):
@@ -469,14 +468,7 @@ class WaveOutputInfo:
 
         if end > self.segment_end:
             self.segment_end = end
-
-    def flush_signals(self, record):
-        if self.signal_file is not None:
-            sf = record.open_bin_file(self.signal_file)
-            sf.flush()
-        record.set_property(['waves', 'segment_start'], self.segment_start)
-        record.set_property(['waves', 'segment_end'], self.segment_end)
-        record.set_property(['waves', 'flushed_time'], self.flushed_time)
+            record.set_property(['waves', 'segment_end'], self.segment_end)
 
 ################################################################
 
