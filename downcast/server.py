@@ -28,10 +28,12 @@ from .attributes import (undefined_wave, undefined_numeric,
 
 class DWCDB:
     _config = None
+    _config_path = ''
 
     def load_config(filename):
         DWCDB._config = ConfigParser()
         DWCDB._config.read(filename)
+        DWCDB._config_path = os.path.dirname(filename)
 
     def __init__(self, servername):
         self._server = DWCDBServer.get(servername)
@@ -194,7 +196,9 @@ class DWCDBServer:
             self.paramstyle = sqlite3.paramstyle
         elif self.dbtype == 'bcp':
             from .db import dwcbcp
-            self.bcpdirs = DWCDB._config[servername]['bcp-path']
+            self.bcpdirs = []
+            for d in DWCDB._config[servername]['bcp-path'].split(':'):
+                self.bcpdirs.append(os.path.join(DWCDB._config_path, d))
             self.dialect = 'sqlite'
             self.paramstyle = dwcbcp.paramstyle
         else:
@@ -225,7 +229,7 @@ class DWCDBServer:
             return sqlite3.connect(self.filename)
         elif self.dbtype == 'bcp':
             from .db import dwcbcp
-            return dwcbcp.connect(self.bcpdirs.split(':'))
+            return dwcbcp.connect(self.bcpdirs)
 
 class UnknownAttrError(Exception):
     """Internal exception indicating the object does not exist."""
