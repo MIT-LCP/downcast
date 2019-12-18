@@ -218,7 +218,8 @@ class DWCDBServer:
         if self.dbtype == 'mssql':
             import pymssql
             return pymssql.connect(self.hostname, self.username,
-                                   self.password, self.database)
+                                   self.password, self.database,
+                                   tds_version='7.1')
         elif self.dbtype == 'sqlite':
             import sqlite3
             return sqlite3.connect(self.filename)
