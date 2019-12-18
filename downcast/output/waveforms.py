@@ -457,13 +457,17 @@ class WaveOutputInfo:
             spf = -(-_tpf // signal.sample_period)
             t0 = (start - self.segment_start) // signal.sample_period
             n = (end - start) // signal.sample_period
+            if signal.scale_lower and signal.scale_lower > 0:
+                zsub = b'\0\x80'
+            else:
+                zsub = b'\0\0'
             for i in range(0, n):
                 fn = (t0 + i) // spf
                 sn = (t0 + i) % spf
                 ind = fn * self.frame_size + self.frame_offset[signal] + sn
                 sv = samples[2*i:2*i+2]
                 if sv == b'\0\0':
-                    sv = b'\0\x80'
+                    sv = zsub
                 sf.write(ind * 2, sv)
 
         if end > self.segment_end:
