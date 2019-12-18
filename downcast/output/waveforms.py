@@ -371,7 +371,16 @@ class WaveOutputInfo:
                 cau = signal.calibration_abs_upper
                 try:
                     gain = (csu - csl) / (cau - cal)
-                    baseline = csl - cal * gain
+                    if units == 'mV':
+                        # ECG signals appear to be consistently
+                        # mislabeled in this way (cal is 0.0 and cau
+                        # is 1.0, but the baseline is roughly halfway
+                        # between csl and csu... which is also roughly
+                        # halfway between sl and su.  Not sure what
+                        # the correct interpretation is.)
+                        baseline = (csl + csu) / 2
+                    else:
+                        baseline = csl - cal * gain
                 except (TypeError, ArithmeticError):
                     gain = 0
                     baseline = 0
