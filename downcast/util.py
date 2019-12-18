@@ -22,3 +22,34 @@ try:
 except ImportError:
     def setproctitle(title):
         pass
+
+_ascii_substitutions = {
+    '\N{HEAVY ASTERISK}': '*',                  # ✱
+    '\N{MICRO SIGN}': 'u',                      # µ
+    '\N{DEGREE SIGN}': 'deg',                   # °
+    '\N{SUBSCRIPT TWO}': '2',                   # ₂
+    '\N{SUPERSCRIPT TWO}': '^2',                # ²
+    '\N{GREEK CAPITAL LETTER DELTA}': 'Delta',  # Δ
+}
+for x in list(range(32)) + [127]:
+    _ascii_substitutions[x] = ' '
+_ascii_substitutions = str.maketrans(_ascii_substitutions)
+
+def string_to_ascii(string):
+    """
+    Convert various characters to approximate ASCII equivalents.
+
+    >>> string_to_ascii('✱✱✱ VTach')
+    '*** VTach'
+    >>> string_to_ascii('µV')
+    'uV'
+    >>> string_to_ascii('°C')
+    'degC'
+    >>> string_to_ascii('SpO₂')
+    'SpO2'
+    >>> string_to_ascii('ml/m²')
+    'ml/m^2'
+    >>> string_to_ascii('ΔTemp')
+    'DeltaTemp'
+    """
+    return string.translate(_ascii_substitutions)
