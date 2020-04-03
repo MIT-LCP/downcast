@@ -71,7 +71,10 @@ class TimeMap:
             for e in self.entries:
                 w.writerow(e[0:3])
             f.flush()
-            os.fdatasync(f.fileno())
+            try:
+                os.fdatasync(f.fileno())
+            except:
+                os.fsync(f.fileno())
         os.rename(tmpfname, fname)
 
     def set_time(self, seqnum, time):

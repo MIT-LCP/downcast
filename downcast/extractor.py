@@ -294,7 +294,10 @@ class ExtractorQueue:
             json.dump(data, f, sort_keys = deterministic)
             f.write('\n')
             f.flush()
-            os.fdatasync(f.fileno())
+            try:
+                os.fdatasync(f.fileno())
+            except:
+                os.fsync(f.fileno())
         os.rename(tmpfname, filename)
 
     def _state_file_name(self, dest_dir):

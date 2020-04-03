@@ -252,7 +252,10 @@ class ArchiveRecord:
     def dir_sync(self):
         d = os.open(self.path, os.O_RDONLY|os.O_DIRECTORY)
         try:
-            os.fdatasync(d)
+            try:
+                os.fdatasync(d)
+            except:
+                os.fsync(d)
         finally:
             os.close(d)
 
@@ -271,7 +274,10 @@ class ArchiveRecord:
             json.dump(content, f, sort_keys = deterministic)
             f.write('\n')
             f.flush()
-            os.fdatasync(f.fileno())
+            try:
+                os.fdatasync(f.fileno())
+            except:
+                os.fsync(f.fileno())
         os.rename(tmpfname, fname)
 
     def get_property(self, path):

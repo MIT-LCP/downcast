@@ -61,7 +61,10 @@ class ArchiveLogFile:
         """Ensure that previous messages are saved to disk."""
         self.fp.flush()
         if fsync:
-            os.fdatasync(self.fp.fileno())
+            try:
+                os.fdatasync(self.fp.fileno())
+            except:
+                os.fsync(self.fp.fileno())
 
     def close(self, fsync = True):
         """Flush and close the file."""
@@ -153,7 +156,10 @@ class ArchiveBinaryFile:
             os.ftruncate(self.fd, self.real_size)
             self.current_size = self.real_size
         if fsync:
-            os.fdatasync(self.fd)
+            try:
+                os.fdatasync(self.fd)
+            except:
+                os.fsync(self.fd)
 
     def close(self, fsync = True):
         """Flush and close the file."""
