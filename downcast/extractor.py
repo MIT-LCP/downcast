@@ -75,6 +75,21 @@ class Extractor:
             for queue in self.queues:
                 queue.save_state(self.dest_dir, self.deterministic_output)
 
+    def fully_processed_timestamp(self):
+        """Determine a timestamp for which all messages have been processed.
+
+        There can be no further messages from before this point in
+        time, although messages later than this point in time may or
+        may not have been retrieved yet.
+        """
+        t = None
+        for q in self.queues:
+            if q.oldest_unacked_timestamp is None:
+                return very_old_timestamp
+            if t is None or q.oldest_unacked_timestamp < t:
+                t = q.oldest_unacked_timestamp
+        return t
+
     def idle(self):
         """Check whether all available messages have been received.
 
