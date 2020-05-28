@@ -78,11 +78,15 @@ class ParallelDispatcher:
                                    pending_limit = self.pending_limit,
                                    name = ('handler%d' % i))
                 self.children.append(c)
-            atexit.register(self._stop)
+            atexit.register(self.shutdown)
 
-    def _stop(self):
+    def shutdown(self):
+        """Stop all worker processes and wait for them to exit.
+
+        Typically flush should be called first.
+        """
         if self.children is not None:
-            atexit.unregister(self._stop)
+            atexit.unregister(self.shutdown)
             for c in self.children:
                 c.close()
             self.children = None
