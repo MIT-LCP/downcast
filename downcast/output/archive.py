@@ -127,10 +127,6 @@ class Archive:
         # types.  But everything about record splitting is slightly
         # bogus and ad-hoc.
 
-        # FIXME: We still need to ensure that records are finalized at
-        # the end of a patient stay, based on nearby message
-        # timestamps.
-
         timestamp = message.timestamp
 
         if rec is not None:
@@ -174,6 +170,28 @@ class Archive:
             proc.join()
             if proc.exitcode != 0:
                 raise Exception('Failed to finalize record %s' % record_id)
+
+    def finalize_before(self, timestamp):
+        """Finalize records for which the time limit has expired.
+
+        This indicates that all messages prior to the given timestamp
+        have now been processed.  For any record where we have not
+        seen any messages within the last hour (split_interval), it is
+        now safe to finalize the record.
+
+        This must be called periodically, since otherwise nothing
+        would finalize records at the end of the patient's stay.
+        """
+        recs = list(self.records.values())
+        for rec in recs:
+            end = rec.end_time()
+            if end is not None:
+                n = delta_ms(timestamp, end)
+                if n > self.split_interval:
+                    print('%s: splitting after %s (no more data before %s)'
+                          % (rec.record_id, end, timestamp))
+                    sys.stdout.flush()
+                    self._finalize_record(rec)
 
     def terminate(self):
         while self.records:
