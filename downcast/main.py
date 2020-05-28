@@ -42,13 +42,7 @@ def main(args = None):
     (_, n) = resource.getrlimit(resource.RLIMIT_NOFILE)
     if n != resource.RLIM_INFINITY and n < 4096:
         sys.exit('RLIMIT_NOFILE too low (%d)' % (n,))
-    try:
-        resource.setrlimit(resource.RLIMIT_NOFILE, (n, n))
-    except:
-        target_procs = 10240
-        cur_proc, max_proc = resource.getrlimit(resource.RLIMIT_NPROC)
-        target_proc = min(max_proc, target_procs)
-        resource.setrlimit(resource.RLIMIT_NPROC, (max(cur_proc, target_proc), max_proc))
+    resource.setrlimit(resource.RLIMIT_NOFILE, (n, n))
 
     opts = _parse_cmdline(args)
     extractor = _init_extractor(opts)
