@@ -32,6 +32,7 @@ from .parser import (WaveSampleParser, NumericValueParser,
                      PatientDateAttributeParser,
                      PatientStringAttributeParser, BedTagParser)
 from .timestamp import (T, very_old_timestamp)
+from .util import fdatasync
 
 class Extractor:
     def __init__(self, db, dest_dir, fatal_exceptions = False,
@@ -294,10 +295,7 @@ class ExtractorQueue:
             json.dump(data, f, sort_keys = deterministic)
             f.write('\n')
             f.flush()
-            try:
-                os.fdatasync(f.fileno())
-            except:
-                os.fsync(f.fileno())
+            fdatasync(f.fileno())
         os.rename(tmpfname, filename)
 
     def _state_file_name(self, dest_dir):

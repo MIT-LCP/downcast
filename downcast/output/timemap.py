@@ -23,6 +23,7 @@ import logging
 from datetime import timedelta
 
 from ..timestamp import T, delta_ms
+from ..util import fdatasync
 
 class TimeMap:
     """
@@ -71,10 +72,7 @@ class TimeMap:
             for e in self.entries:
                 w.writerow(e[0:3])
             f.flush()
-            try:
-                os.fdatasync(f.fileno())
-            except:
-                os.fsync(f.fileno())
+            fdatasync(f.fileno())
         os.rename(tmpfname, fname)
 
     def set_time(self, seqnum, time):

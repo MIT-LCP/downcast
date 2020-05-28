@@ -20,6 +20,8 @@ import os
 import errno
 import mmap
 
+from ..util import fdatasync
+
 class ArchiveLogFile:
     """Append-only text log output file.
 
@@ -61,10 +63,7 @@ class ArchiveLogFile:
         """Ensure that previous messages are saved to disk."""
         self.fp.flush()
         if fsync:
-            try:
-                os.fdatasync(self.fp.fileno())
-            except:
-                os.fsync(self.fp.fileno())
+            fdatasync(self.fp.fileno())
 
     def close(self, fsync = True):
         """Flush and close the file."""
@@ -156,10 +155,7 @@ class ArchiveBinaryFile:
             os.ftruncate(self.fd, self.real_size)
             self.current_size = self.real_size
         if fsync:
-            try:
-                os.fdatasync(self.fd)
-            except:
-                os.fsync(self.fd)
+            fdatasync(self.fd)
 
     def close(self, fsync = True):
         """Flush and close the file."""

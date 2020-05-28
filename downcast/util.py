@@ -16,12 +16,25 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import os
+import tempfile
+
 try:
     import setproctitle
     setproctitle = setproctitle.setproctitle
 except ImportError:
     def setproctitle(title):
         pass
+
+# fdatasync: ensure data for the given file descriptor is written to disk
+# (implemented using fsync if the OS does not appear to support fdatasync)
+with tempfile.TemporaryFile() as f:
+    try:
+        os.fdatasync(f.fileno())
+    except Exception:
+        fdatasync = os.fsync
+    else:
+        fdatasync = os.fdatasync
 
 _ascii_substitutions = {
     '\N{HEAVY ASTERISK}': '*',                  # ✱

@@ -22,6 +22,7 @@ import re
 import json
 
 from ..timestamp import T, delta_ms
+from ..util import fdatasync
 from .files import ArchiveLogFile, ArchiveBinaryFile
 from .timemap import TimeMap
 from .process import WorkerProcess
@@ -252,10 +253,7 @@ class ArchiveRecord:
     def dir_sync(self):
         d = os.open(self.path, os.O_RDONLY|os.O_DIRECTORY)
         try:
-            try:
-                os.fdatasync(d)
-            except:
-                os.fsync(d)
+            fdatasync(d)
         finally:
             os.close(d)
 
@@ -274,10 +272,7 @@ class ArchiveRecord:
             json.dump(content, f, sort_keys = deterministic)
             f.write('\n')
             f.flush()
-            try:
-                os.fdatasync(f.fileno())
-            except:
-                os.fsync(f.fileno())
+            fdatasync(f.fileno())
         os.rename(tmpfname, fname)
 
     def get_property(self, path):
