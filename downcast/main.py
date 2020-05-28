@@ -169,6 +169,15 @@ def _init_extractor(opts):
 
 def _init_archive(opts, extractor):
     a = Archive(opts.output_dir, deterministic_output = True)
+
+    # Scan the output directory to find patients for whom we have not
+    # seen any data for a long time, and finalize those records.  We
+    # need to do this periodically since otherwise nothing would
+    # finalize records at the end of a patient stay.
+    synctime = extractor.fully_processed_timestamp()
+    a.finalize_before(synctime)
+    a.flush()
+
     extractor.add_handler(NumericValueHandler(a))
     extractor.add_handler(WaveSampleHandler(a))
     extractor.add_handler(EnumerationValueHandler(a))
