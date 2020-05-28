@@ -41,10 +41,6 @@ class DWCDB:
         self.servername = servername
         self.dialect = self._server.dialect
         self.paramstyle = self._server.paramstyle
-        self._warned_mapping = False
-        self._warned_wave = False
-        self._warned_numeric = False
-        self._warned_enum = False
 
     def __repr__(self):
         return ('%s(%r)' % (self.__class__.__name__, self.servername))
@@ -87,9 +83,9 @@ class DWCDB:
         try:
             v = self._parse_attr(p, sync)
         except UnknownAttrError:
-            if not self._warned_wave:
+            if not self._server._warned_wave:
                 logging.warning('unknown wave ID: %s' % wave_id)
-                self._warned_wave = True
+                self._server._warned_wave = True
             v = undefined_wave
         except DBSyntaxError as e:
             warnings.warn(e.warning(), stacklevel = 2)
@@ -110,9 +106,9 @@ class DWCDB:
         try:
             v = self._parse_attr(p, sync)
         except UnknownAttrError:
-            if not self._warned_numeric:
+            if not self._server._warned_numeric:
                 logging.warning('unknown numeric ID: %s' % numeric_id)
-                self._warned_numeric = True
+                self._server._warned_numeric = True
             v = undefined_numeric
         except DBSyntaxError as e:
             warnings.warn(e.warning(), stacklevel = 2)
@@ -133,9 +129,9 @@ class DWCDB:
         try:
             v = self._parse_attr(p, sync)
         except UnknownAttrError:
-            if not self._warned_enum:
+            if not self._server._warned_enum:
                 logging.warning('unknown enumeration ID: %s' % enumeration_id)
-                self._warned_enum = True
+                self._server._warned_enum = True
             v = undefined_enumeration
         except DBSyntaxError as e:
             warnings.warn(e.warning(), stacklevel = 2)
@@ -158,9 +154,9 @@ class DWCDB:
         try:
             v = self._parse_attr(p, True)
         except UnknownAttrError:
-            if not self._warned_mapping:
+            if not self._server._warned_mapping:
                 logging.warning('unknown mapping ID: %s' % mapping_id)
-                self._warned_mapping = True
+                self._server._warned_mapping = True
             return None
         except DBSyntaxError as e:
             warnings.warn(e.warning(), stacklevel = 2)
@@ -227,6 +223,10 @@ class DWCDBServer:
         self.patient_map = {}
         self.attr_db = None
         self.attr_db_pid = None
+        self._warned_mapping = False
+        self._warned_wave = False
+        self._warned_numeric = False
+        self._warned_enum = False
 
     def get(servername):
         s = DWCDBServer._named_servers.get(servername, None)
