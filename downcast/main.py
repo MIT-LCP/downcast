@@ -45,9 +45,7 @@ def main(args = None):
     resource.setrlimit(resource.RLIMIT_NOFILE, (n, n))
 
     opts = _parse_cmdline(args)
-    extractor = _init_extractor(opts)
-    archive = _init_archive(opts, extractor)
-    _main_loop(opts, extractor, archive)
+    _main_loop(opts)
 
 def _parse_timestamp(arg):
     try:
@@ -192,27 +190,44 @@ def _init_archive(opts, extractor):
     extractor.flush()
     return a
 
-def _main_loop(opts, extractor, archive):
-    progname = sys.argv[0]
-
+def _main_loop(opts):
     if opts.init:
+        # In --init mode, simply create the extractor and write the
+        # initial queue state files.
+        extractor = _init_extractor(opts)
+        extractor.flush()
         return
 
-    try:
-        n = 500
-        while opts.live or not extractor.idle():
-            extractor.run()
-            n -= 1
-            if n <= 0:
-                extractor.flush()
-                n = 500
-    finally:
-        extractor.flush()
+    # Otherwise, feed data from the extractor into the archive until
+    # we reach the desired end point.
+    while True:
+        # We periodically stop and re-create the extractor and
+        # archive, so that records can be finalized at the end of a
+        # stay.  (We can't simply invoke finalize_before on a live
+        # Archive object because different patients are handled by
+        # different subprocesses - each process only knows about the
+        # patients that have been delegated to it.)
+        extractor = _init_extractor(opts)
+        _init_archive(opts, extractor)
+        next_sync = (extractor.fully_processed_timestamp()
+                     + timedelta(hours = 3))
+        try:
+            # Save state to disk after every 500 queries.
+            n = 500
+            while extractor.fully_processed_timestamp() < next_sync:
+                if extractor.idle() and not opts.live:
+                    if opts.terminate:
+                        extractor.dispatcher.terminate()
+                        extractor.flush()
+                        a = Archive(opts.output_dir)
+                        a.terminate()
+                    return
 
-    if opts.terminate:
-        extractor.dispatcher.terminate()
-        extractor.flush()
-        a = Archive(opts.output_dir)
-        a.terminate()
-    else:
-        extractor.flush()
+                extractor.run()
+                n -= 1
+                if n <= 0:
+                    extractor.flush()
+                    n = 500
+        finally:
+            extractor.flush()
+            extractor.dispatcher.shutdown()
