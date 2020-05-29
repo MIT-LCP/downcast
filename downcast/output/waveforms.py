@@ -360,8 +360,10 @@ class WaveOutputInfo:
             if end is not None:
                 hf.write(' %d' % ((end - start) // _tpf))
             hf.write('\n')
+            sigdesc = []
             for signal in signals:
                 (units, desc) = _get_signal_units_desc(signal)
+                sigdesc.append(desc)
 
                 spf = -(-_tpf // signal.sample_period) # XXX
 
@@ -417,6 +419,32 @@ class WaveOutputInfo:
                     hf.write('(%d)' % baseline)
                 hf.write('/%s %d %d 0 0 0 %s\n'
                          % (units, adcres, adczero, desc))
+
+            # Write additional attributes as info strings.
+            for (i, signal) in enumerate(signals):
+                info = []
+
+                # Report channel number for ECGs.
+                if signal.base_physio_id == 131328:
+                    info.append('channel=%d' % signal.channel)
+
+                # Report if signal is derived (e.g. standard limb
+                # leads derived from EASI leads.)
+                if signal.is_derived:
+                    info.append('derived')
+
+                # Report filter cutoff frequencies if known.
+                if signal.low_edge_frequency and signal.high_edge_frequency:
+                    info.append('bandpass=[%g,%g]'
+                                % (signal.low_edge_frequency,
+                                   signal.high_edge_frequency))
+                elif signal.low_edge_frequency:
+                    info.append('highpass=%g' % signal.low_edge_frequency)
+                elif signal.high_edge_frequency:
+                    info.append('lowpass=%g' % signal.high_edge_frequency)
+                if info:
+                    hf.write('# signal %d (%s): ' % (i, sigdesc[i]))
+                    hf.write(' '.join(info) + '\n')
 
     def open_segment(self, record, segname, start, signals):
         self.close_segment(record)
