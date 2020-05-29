@@ -363,6 +363,8 @@ class WaveOutputInfo:
             sigdesc = []
             for signal in signals:
                 (units, desc) = _get_signal_units_desc(signal)
+                while desc in sigdesc:
+                    desc += '+'
                 sigdesc.append(desc)
 
                 spf = -(-_tpf // signal.sample_period) # XXX
