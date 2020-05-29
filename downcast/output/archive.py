@@ -385,7 +385,7 @@ class ArchiveRecord:
 
             sn0 = self.seqnum0()
 
-            if not nl.missing():
+            if not nl.missing() and all_numerics:
                 num_columns = sorted(all_numerics)
                 num_index = {n: i + 1 for i, n in enumerate(num_columns)}
 
