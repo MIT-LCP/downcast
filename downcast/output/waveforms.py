@@ -408,6 +408,7 @@ class WaveOutputInfo:
                     while su >= adcmax or sl < adcmin:
                         adcmin *= 2
                         adcmax *= 2
+                        adcres += 1
                     adczero = (adcmin + adcmax) // 2
 
                 if gain == 0:
