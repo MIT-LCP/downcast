@@ -45,23 +45,28 @@ class AlertHandler:
         # Write value to the log file
         sn = msg.sequence_number
         ts = msg.timestamp.strftime_utc('%Y%m%d%H%M%S%f')
+        idstr = str(msg.alert_id)
         lbl = string_to_ascii(msg.label)
+        if msg.is_silenced:
+            statestr = '~'
+        else:
+            statestr = '='
 
         logfile.append('S%s' % sn)
         if msg.announce_time and msg.announce_time > _sane_time:
             ats = msg.announce_time.strftime_utc('%Y%m%d%H%M%S%f')
             logfile.append(ats)
-            logfile.append('%s+%s' % (msg.severity, lbl))
+            logfile.append('(%s)+' % (idstr,))
         if msg.onset_time and msg.onset_time > _sane_time:
             ots = msg.onset_time.strftime_utc('%Y%m%d%H%M%S%f')
             logfile.append(ots)
-            logfile.append('%s!%s' % (msg.severity, lbl))
+            logfile.append('(%s)!' % (idstr,))
         if msg.end_time and msg.end_time > _sane_time:
             ets = msg.end_time.strftime_utc('%Y%m%d%H%M%S%f')
             logfile.append(ets)
-            logfile.append('%s-%s' % (msg.severity, lbl))
+            logfile.append('(%s)-' % (idstr,))
         logfile.append(ts)
-        logfile.append('%s=%s' % (msg.severity, lbl))
+        logfile.append('(%s)%s%s%s' % (idstr, msg.severity, statestr, lbl))
 
         source.ack_message(chn, msg, self)
 
