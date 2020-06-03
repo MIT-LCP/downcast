@@ -304,8 +304,11 @@ def join_segments(record_header, segment_headers, layout_suffix = '_layout',
             sig.adczero = 0
         else:
             sig.adczero = (1 << (sig.adcres - 1))
-        vmin = sig.adczero - (1 << (sig.adcres - 1))
-        vmax = vmin + (1 << sig.adcres) - 1
+        if sig.adcres > 0:
+            vmin = sig.adczero - (1 << (sig.adcres - 1))
+            vmax = vmin + (1 << sig.adcres) - 1
+        else:
+            vmin = vmax = sig.adczero
 
         tvmin = sig._minphys * sig.gain
         tvmax = sig._maxphys * sig.gain
