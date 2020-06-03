@@ -26,14 +26,12 @@ from ..util import fdatasync
 from .files import ArchiveLogFile, ArchiveBinaryFile
 from .timemap import TimeMap
 from .process import WorkerProcess
-from .waveforms import WaveSampleHandler
-from .enums import EnumerationValueHandler
-from .numerics import NumericValueHandler
-from .alerts import AlertHandler
+from .waveforms import (WaveSampleHandler, WaveSampleFinalizer)
+from .enums import (EnumerationValueHandler, EnumerationValueFinalizer)
+from .numerics import (NumericValueHandler, NumericValueFinalizer)
+from .alerts import (AlertHandler, AlertFinalizer)
 from .mapping import PatientMappingHandler
 from .patients import PatientHandler
-
-from datetime import datetime, timezone
 from .log import ArchiveLogReader
 
 def _subdirs(dirname):
@@ -244,13 +242,18 @@ class ArchiveRecord:
         self.set_property(['finalized'], 0)
 
     def finalize(self):
-        WaveSampleHandler.finalize_record(self)
-        self._finalize_events()
-        EnumerationValueHandler.finalize_record(self)
-        NumericValueHandler.finalize_record(self)
-        AlertHandler.finalize_record(self)
-        PatientMappingHandler.finalize_record(self)
-        PatientHandler.finalize_record(self)
+        wsf = WaveSampleFinalizer(self)
+        nvf = NumericValueFinalizer(self)
+        evf = EnumerationValueFinalizer(self)
+        alf = AlertFinalizer(self)
+
+        self.time_map.resolve_gaps()
+
+        wsf.finalize_record()
+        nvf.finalize_record()
+        evf.finalize_record()
+        alf.finalize_record()
+
         for f in self.files.values():
             f.close()
         self.files = {}
@@ -351,109 +354,6 @@ class ArchiveRecord:
             self.files[name].close()
             del self.files[name]
 
-    # XXX
-    def _finalize_events(self):
-        nfn = os.path.join(self.path, '_phi_numerics')
-        efn = os.path.join(self.path, '_phi_enums')
-        afn = os.path.join(self.path, '_phi_alerts')
-
-        with ArchiveLogReader(nfn, allow_missing = True) as nl, \
-             ArchiveLogReader(efn, allow_missing = True) as el, \
-             ArchiveLogReader(afn, allow_missing = True) as al:
-
-            # Scan the numerics log file; make a list of all non-null
-            # numerics, and add timestamps to the time map
-            all_numerics = set()
-            for (sn, ts, line) in nl.unsorted_items():
-                ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
-                ts = ts.replace(tzinfo = timezone.utc)
-                self.time_map.add_time(ts)
-                if b'\030' not in line:
-                    parts = line.rstrip(b'\n').split(b'\t')
-                    # ignore nulls
-                    if len(parts) > 1 and parts[1]:
-                        all_numerics.add(parts[0])
-
-            # Scan the enums and alerts log files, and add timestamps
-            # to the time map
-            for l in (el, al):
-                for (sn, ts, line) in l.unsorted_items():
-                    ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
-                    ts = ts.replace(tzinfo = timezone.utc)
-                    self.time_map.add_time(ts)
-            self.time_map.resolve_gaps()
-
-            sn0 = self.seqnum0()
-
-            if not nl.missing() and all_numerics:
-                num_columns = sorted(all_numerics)
-                num_index = {n: i + 1 for i, n in enumerate(num_columns)}
-
-                nf = self.open_log_file('numerics.csv')
-                row = [b'"time"']
-                for name in num_columns:
-                    row.append(b'"' + name.replace(b'"', b'""') + b'"')
-                cur_ts = None
-                cur_sn = None
-                cur_time = None
-                for (sn, ts, line) in nl.sorted_items():
-                    if b'\030' in line:
-                        continue
-                    parts = line.rstrip(b'\n').split(b'\t')
-                    # ignore nulls
-                    if len(parts) < 2 or not parts[1]:
-                        continue
-
-                    # determine new time value
-                    if ts == cur_ts and sn == cur_sn:
-                        time = cur_values[0]
-                    else:
-                        ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
-                        ts = ts.replace(tzinfo = timezone.utc)
-                        sn = self.time_map.get_seqnum(ts) or sn
-                        if sn0 is None:
-                            sn0 = sn
-                        # Time measured in counter ticks, ick.
-                        # Better would probably be to use (real) seconds
-                        time = str(sn - sn0).encode()
-                        cur_ts = ts
-                        cur_sn = sn
-                        cur_time = time
-
-                    # write out a complete row if the time value has changed
-                    if time != row[0]:
-                        nf.fp.write(b','.join(row))
-                        nf.fp.write(b'\n')
-                        row = [time] + [b''] * len(all_numerics)
-                    row[num_index[parts[0]]] = parts[1]
-                # write the final row
-                nf.fp.write(b','.join(row))
-                nf.fp.write(b'\n')
-
-            if not el.missing():
-                ef = self.open_log_file('enums')
-                for (sn, ts, line) in el.sorted_items():
-                    if b'\030' in line:
-                        continue
-                    ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
-                    ts = ts.replace(tzinfo = timezone.utc)
-                    sn = self.time_map.get_seqnum(ts) or sn
-                    if sn0 is None:
-                        sn0 = sn
-                    ef.fp.write(('%s\t' % (sn - sn0)).encode()) # XXX
-                    ef.fp.write(line.strip())                   # XXX
-                    ef.fp.write(b'\n')                          # XXX
-
-            if not al.missing():
-                af = self.open_log_file('alerts')
-                for (sn, ts, line) in al.sorted_items():
-                    if b'\030' in line:
-                        continue
-                    ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
-                    ts = ts.replace(tzinfo = timezone.utc)
-                    sn = self.time_map.get_seqnum(ts) or sn
-                    if sn0 is None:
-                        sn0 = sn
-                    af.fp.write(('%s\t' % (sn - sn0)).encode()) # XXX
-                    af.fp.write(line.strip())                   # XXX
-                    af.fp.write(b'\n')                          # XXX
+    def open_log_reader(self, name, allow_missing = False):
+        fname = os.path.join(self.path, name)
+        return ArchiveLogReader(fname, allow_missing = allow_missing)

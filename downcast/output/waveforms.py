@@ -154,21 +154,6 @@ class WaveSampleHandler:
     def flush(self):
         self.archive.flush()
 
-    def finalize_record(record):
-        info = WaveOutputInfo(record)
-        info.close_segment(record)
-
-        # Find all segments and construct the multi-segment header
-        segments = []
-        for f in os.listdir(record.path):
-            if re.fullmatch(r'[0-9]+\.hea', f):
-                n = int(f.split('.')[0])
-                segments.append((n, f))
-        segments.sort()
-        if segments:
-            headers = [os.path.join(record.path, s[1]) for s in segments]
-            join_segments(os.path.join(record.path, 'waves.hea'), headers)
-
 def _parse_sample_list(text):
     """Parse an ASCII string into a list of integers."""
     if text is None:
@@ -610,3 +595,24 @@ class SignalBuffer:
                 end = min(start0, end)
         return (start, end, data)
 
+################################################################
+
+class WaveSampleFinalizer:
+    def __init__(self, record):
+        self.record = record
+
+    def finalize_record(self):
+        record = self.record
+        info = WaveOutputInfo(record)
+        info.close_segment(record)
+
+        # Find all segments and construct the multi-segment header
+        segments = []
+        for f in os.listdir(record.path):
+            if re.fullmatch(r'[0-9]+\.hea', f):
+                n = int(f.split('.')[0])
+                segments.append((n, f))
+        segments.sort()
+        if segments:
+            headers = [os.path.join(record.path, s[1]) for s in segments]
+            join_segments(os.path.join(record.path, 'waves.hea'), headers)

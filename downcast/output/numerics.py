@@ -16,6 +16,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from datetime import datetime, timezone
+
 from ..messages import NumericValueMessage
 from ..util import string_to_ascii
 
@@ -69,5 +71,69 @@ class NumericValueHandler:
     def flush(self):
         self.archive.flush()
 
-    def finalize_record(record):
-        pass
+class NumericValueFinalizer:
+    def __init__(self, record):
+        self.record = record
+        self.log = record.open_log_reader('_phi_numerics',
+                                          allow_missing = True)
+
+        # Scan the numerics log file; make a list of all non-null
+        # numerics, and add timestamps to the time map
+        self.all_numerics = set()
+        for (sn, ts, line) in self.log.unsorted_items():
+            ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
+            ts = ts.replace(tzinfo = timezone.utc)
+            record.time_map.add_time(ts)
+            if b'\030' not in line:
+                parts = line.rstrip(b'\n').split(b'\t')
+                # ignore nulls
+                if len(parts) > 1 and parts[1]:
+                    self.all_numerics.add(parts[0])
+
+    def finalize_record(self):
+        sn0 = self.record.seqnum0()
+
+        if self.all_numerics:
+            num_columns = sorted(self.all_numerics)
+            num_index = {n: i + 1 for i, n in enumerate(num_columns)}
+
+            nf = self.record.open_log_file('numerics.csv')
+            row = [b'"time"']
+            for name in num_columns:
+                row.append(b'"' + name.replace(b'"', b'""') + b'"')
+            cur_ts = None
+            cur_sn = None
+            cur_time = None
+            for (sn, ts, line) in self.log.sorted_items():
+                if b'\030' in line:
+                    continue
+                parts = line.rstrip(b'\n').split(b'\t')
+                # ignore nulls
+                if len(parts) < 2 or not parts[1]:
+                    continue
+
+                # determine new time value
+                if ts == cur_ts and sn == cur_sn:
+                    time = cur_values[0]
+                else:
+                    ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
+                    ts = ts.replace(tzinfo = timezone.utc)
+                    sn = self.record.time_map.get_seqnum(ts) or sn
+                    if sn0 is None:
+                        sn0 = sn
+                    # Time measured in counter ticks, ick.
+                    # Better would probably be to use (real) seconds
+                    time = str(sn - sn0).encode()
+                    cur_ts = ts
+                    cur_sn = sn
+                    cur_time = time
+
+                # write out a complete row if the time value has changed
+                if time != row[0]:
+                    nf.fp.write(b','.join(row))
+                    nf.fp.write(b'\n')
+                    row = [time] + [b''] * len(self.all_numerics)
+                row[num_index[parts[0]]] = parts[1]
+            # write the final row
+            nf.fp.write(b','.join(row))
+            nf.fp.write(b'\n')

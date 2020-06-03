@@ -16,6 +16,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from datetime import datetime, timezone
+
 from ..messages import EnumerationValueMessage
 
 _del_control = str.maketrans({x: ' ' for x in list(range(32)) + [127]})
@@ -72,5 +74,30 @@ class EnumerationValueHandler:
     def flush(self):
         self.archive.flush()
 
-    def finalize_record(record):
-        pass
+class EnumerationValueFinalizer:
+    def __init__(self, record):
+        self.record = record
+        self.log = record.open_log_reader('_phi_enums', allow_missing = True)
+
+        # Scan the enums log file, and add timestamps to the time map
+        for (sn, ts, line) in self.log.unsorted_items():
+            ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
+            ts = ts.replace(tzinfo = timezone.utc)
+            record.time_map.add_time(ts)
+
+    def finalize_record(self):
+        sn0 = self.record.seqnum0()
+
+        if not self.log.missing():
+            ef = self.record.open_log_file('enums')
+            for (sn, ts, line) in self.log.sorted_items():
+                if b'\030' in line:
+                    continue
+                ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
+                ts = ts.replace(tzinfo = timezone.utc)
+                sn = self.record.time_map.get_seqnum(ts) or sn
+                if sn0 is None:
+                    sn0 = sn
+                ef.fp.write(('%s\t' % (sn - sn0)).encode()) # XXX
+                ef.fp.write(line.strip())                   # XXX
+                ef.fp.write(b'\n')                          # XXX

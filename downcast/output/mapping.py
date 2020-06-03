@@ -32,6 +32,3 @@ class PatientMappingHandler:
 
     def flush(self):
         pass
-
-    def finalize_record(record):
-        pass
