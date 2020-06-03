@@ -244,7 +244,7 @@ def _get_signal_units_desc(attr):
     units = desc = None
     if attr.unit_label == '':
         units = 'NU'
-    elif attr.unit_label is not None:
+    elif attr.unit_label not in (None, 'Unknwn'):
         units = _sanitize_units(attr.unit_label)
     if attr.label is not None and attr.label != '':
         desc = _sanitize_desc(attr.label)
