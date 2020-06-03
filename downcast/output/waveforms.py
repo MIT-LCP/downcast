@@ -519,7 +519,7 @@ class WaveOutputInfo:
                 or self.segment_end is None
                 or start > self.segment_end
                 or start < self.segment_start):
-            self.open_segment(record, ('%09d' % start), start, signals)
+            self.open_segment(record, ('%010d' % start), start, signals)
 
         sf = record.open_bin_file(self.signal_file)
 
