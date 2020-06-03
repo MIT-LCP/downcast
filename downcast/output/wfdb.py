@@ -251,8 +251,11 @@ def join_segments(record_header, segment_headers, layout_suffix = '_layout',
             if sig.skew != 0:
                 min_version = max(min_version, (10, 7))
 
-            adu1 = sig.adczero - (1 << (sig.adcres - 1))
-            adu2 = sig.adczero + (1 << (sig.adcres - 1)) - 1
+            if sig.adcres > 0:
+                adu1 = sig.adczero - (1 << (sig.adcres - 1))
+                adu2 = sig.adczero + (1 << (sig.adcres - 1)) - 1
+            else:
+                adu1 = adu2 = sig.adczero
             if adu1 == -32768:
                 adu1 = -32767
 
