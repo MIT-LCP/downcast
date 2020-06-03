@@ -392,8 +392,7 @@ class ArchiveRecord:
                 nf = self.open_log_file('numerics.csv')
                 row = [b'"time"']
                 for name in num_columns:
-                    # FIXME: need to escape "
-                    row.append(b'"' + name + b'"')
+                    row.append(b'"' + name.replace(b'"', b'""') + b'"')
                 cur_ts = None
                 cur_sn = None
                 cur_time = None
