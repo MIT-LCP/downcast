@@ -17,9 +17,11 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import collections
+import enum
 import math
 import os
 import re
+import struct
 
 from ..util import fdatasync
 
@@ -30,6 +32,178 @@ def str_to_version(s):
 def version_to_str(v):
     """Convert a tuple of integers into a version string."""
     return '.'.join(str(n) for n in v)
+
+class AnnotationType(enum.IntEnum):
+    NOTQRS   = 0  #     not-QRS (not a getann/putann code)
+    NORMAL   = 1  # N   normal beat
+    LBBB     = 2  # L   left bundle branch block beat
+    RBBB     = 3  # R   right bundle branch block beat
+    ABERR    = 4  # a   aberrated atrial premature beat
+    PVC      = 5  # V   premature ventricular contraction
+    FUSION   = 6  # F   fusion of ventricular and normal beat
+    NPC      = 7  # J   nodal (junctional) premature beat
+    APC      = 8  # A   atrial premature contraction
+    SVPB     = 9  # S   premature or ectopic supraventricular beat
+    VESC     = 10 # E   ventricular escape beat
+    NESC     = 11 # j   nodal (junctional) escape beat
+    PACE     = 12 # /   paced beat
+    UNKNOWN  = 13 # Q   unclassifiable beat
+    NOISE    = 14 # ~   signal quality change
+    ARFCT    = 16 # |   isolated QRS-like artifact
+    STCH     = 18 # s   ST change
+    TCH      = 19 # T   T-wave change
+    SYSTOLE  = 20 # *   systole
+    DIASTOLE = 21 # D   diastole
+    NOTE     = 22 # "   comment annotation
+    MEASURE  = 23 # =   measurement annotation
+    PWAVE    = 24 # p   P-wave peak
+    BBB      = 25 # B   left or right bundle branch block
+    PACESP   = 26 # ^   non-conducted pacer spike
+    TWAVE    = 27 # t   T-wave peak
+    RHYTHM   = 28 # +   rhythm change
+    UWAVE    = 29 # u   U-wave peak
+    LEARN    = 30 # ?   learning
+    FLWAV    = 31 # !   ventricular flutter wave
+    VFON     = 32 # [   start of ventricular flutter/fibrillation
+    VFOFF    = 33 # ]   end of ventricular flutter/fibrillation
+    AESC     = 34 # e   atrial escape beat
+    SVESC    = 35 # n   supraventricular escape beat
+    LINK     = 36 # @   link to external data (aux contains URL)
+    NAPC     = 37 # x   non-conducted P-wave (blocked APB)
+    PFUS     = 38 # f   fusion of paced and normal beat
+    WFON     = 39 # (   waveform onset
+    WFOFF    = 40 # )   waveform end
+    RONT     = 41 # r   R-on-T premature ventricular contraction
+
+_tag_SKIP = 59 << 10
+_tag_NUM  = 60 << 10
+_tag_SUB  = 61 << 10
+_tag_CHN  = 62 << 10
+_tag_AUX  = 63 << 10
+
+_u16 = struct.Struct('<H').pack
+_s32 = struct.Struct('<i').pack
+
+def _skip(n):
+    d = _s32(n)
+    return _u16(_tag_SKIP) + d[2:4] + d[0:2]
+
+class Annotator:
+    """Class for writing WFDB annotation files.
+
+    After creating an Annotator, add annotations by calling put.
+    Annotations do not need to be added in order, and duplicates will
+    be ignored.
+
+    This class does not support defining custom annotation types.
+    """
+    def __init__(self, filename, afreq = None):
+        self._filename = filename
+        self._annots = set()
+        self._afreq = afreq
+
+    def __len__(self):
+        return len(self._annots)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def put(self, time, anntyp, subtyp = 0, chan = 0, num = None, aux = None):
+        """Add an annotation.
+
+        time is the sample number (multiple of 1/afreq).
+
+        anntyp is the annotation type (see AnnotationType).
+
+        chan is the channel (signal number).
+
+        subtyp and num are extra user-defined fields which can each
+        store an integer value between -128 and 127.  If num is
+        unspecified, values will be assigned automatically to avoid
+        creating multiple annotations with the same tuple of (time,
+        chan, num).
+
+        aux is a user-defined field which can hold a string of up to
+        255 bytes.
+        """
+        if anntyp < 0 or anntyp > 49:
+            raise ValueError('invalid anntyp: %r' % (anntyp,))
+        if subtyp < -128 or subtyp > 127:
+            raise ValueError('invalid subtyp: %r' % (subtyp,))
+        if chan < 0 or chan > 255:
+            raise ValueError('invalid chan: %r' % (chan,))
+        if num is None:
+            num = 256
+        elif num < -128 or num > 127:
+            raise ValueError('invalid num: %r' % (num,))
+        if isinstance(aux, str):
+            aux = aux.encode()
+        if aux is not None and len(aux) > 255:
+            raise ValueError('aux string too long: %r' % (aux,))
+
+        self._annots.add((time, num, chan, anntyp, subtyp, aux))
+
+    def close(self, fsync = True):
+        """Write annotations to the output file."""
+        if not self._annots:
+            return
+
+        self._fp = open(self._filename, 'wb')
+        self._time = 0
+        self._num = 0
+        self._chan = 0
+        if self._afreq is not None:
+            t = ("## time resolution: %.17g" % (self._afreq,)).encode()
+            self._writeann((0, 0, 0, AnnotationType.NOTE, 0, t))
+            self._writeann((0, 0, 0, AnnotationType.NOTQRS, 0, None))
+        for a in sorted(self._annots):
+            self._writeann(a)
+        self._fp.write(b'\0\0')
+        if fsync:
+            self._fp.flush()
+            fdatasync(self._fp.fileno())
+        self._fp.close()
+        self._fp = None
+        self._annots = None
+
+    def _writeann(self, annot):
+        (time, num, chan, anntyp, subtyp, aux) = annot
+        if num == 256:
+            if time != self._time or chan != self._chan:
+                num = 0
+            else:
+                num = self._num + 1
+        delta = time - self._time
+        while delta < -0x7fffffff:
+            self._fp.write(_skip(-0x7fffffff))
+            delta -= -0x7fffffff
+        while delta > 0x7fffffff:
+            self._fp.write(_skip(0x7fffffff))
+            delta -= 0x7fffffff
+        if anntyp == 0:
+            self._fp.write(_skip(delta - 1))
+            delta = 1
+        elif delta < 0 or delta > 1023:
+            self._fp.write(_skip(delta))
+            delta = 0
+        self._fp.write(_u16((anntyp << 10) + delta))
+        if subtyp != 0:
+            self._fp.write(_u16(_tag_SUB + (subtyp & 0xff)))
+        if chan != self._chan:
+            self._fp.write(_u16(_tag_CHN + (chan & 0xff)))
+        if num != self._num:
+            self._fp.write(_u16(_tag_NUM + (num & 0xff)))
+        if aux is not None:
+            self._fp.write(_u16(_tag_AUX + len(aux)))
+            self._fp.write(aux)
+            if len(aux) % 2:
+                self._fp.write(b'\0')
+        self._time = time
+        self._chan = chan
+        self._num = num
 
 class SignalInfo:
     def __init__(self, fname = None, fmt = 0, spf = 1, skew = 0, start = 0,
