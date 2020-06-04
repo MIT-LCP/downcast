@@ -17,8 +17,10 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from datetime import datetime, timezone
+import os
 
 from ..messages import EnumerationValueMessage
+from .wfdb import (Annotator, AnnotationType)
 
 _del_control = str.maketrans({x: ' ' for x in list(range(32)) + [127]})
 
@@ -74,12 +76,46 @@ class EnumerationValueHandler:
     def flush(self):
         self.archive.flush()
 
+# Known DWC annotation codes, and corresponding WFDB anntyp / subtyp / aux
+_ann_code = {
+    b'148631': (AnnotationType.NORMAL,  0, None), # N - normal
+    b'148767': (AnnotationType.PVC,     0, None), # V - ventricular
+    b'147983': (AnnotationType.SVPB,    0, None), # S - supraventricular
+    b'148063': (AnnotationType.PACE,    0, None), # P - paced (most common?)
+    b'147543': (AnnotationType.PACE,    1, None), # P - paced
+    b'147591': (AnnotationType.PACE,    2, None), # P - paced (least common?)
+    b'147631': (AnnotationType.PACESP,  0, None), # ' - single pacer spike
+    b'148751': (AnnotationType.PACESP,  1, None), # " - bivent. pacer spike
+    b'148783': (AnnotationType.LEARN,   0, None), # L - learning
+    b'147551': (AnnotationType.NOTE,    0, b'M'), # M - missed beat
+    b'195396': (AnnotationType.UNKNOWN, 0, None), # B - QRS, unspecified type
+    b'148759': (AnnotationType.UNKNOWN, 1, None), # ? - QRS, unclassifiable
+    b'147527': (AnnotationType.ARFCT,   0, None), # A - artifact
+    b'148743': (AnnotationType.NOTE,    0, b'_'), # I - signals inoperable
+}
+
+# Unknown annotations are mapped to an anntyp based on the first
+# letter of the label
+_ann_letter = {
+    b'N': AnnotationType.NORMAL,
+    b'V': AnnotationType.PVC,
+    b'S': AnnotationType.SVPB,
+    b'P': AnnotationType.PACE,
+    b"'": AnnotationType.PACESP,
+    b'"': AnnotationType.PACESP,
+    b'L': AnnotationType.LEARN,
+    b'M': AnnotationType.NOTE,
+    b'B': AnnotationType.UNKNOWN,
+    b'?': AnnotationType.UNKNOWN,
+    b'A': AnnotationType.ARFCT,
+}
+
 class EnumerationValueFinalizer:
     def __init__(self, record):
         self.record = record
         self.log = record.open_log_reader('_phi_enums', allow_missing = True)
 
-        # Scan the enums log file, and add timestamps to the time map
+        # Scan the enums log file, and add timestamps to the time map.
         for (sn, ts, line) in self.log.unsorted_items():
             ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
             ts = ts.replace(tzinfo = timezone.utc)
@@ -87,17 +123,30 @@ class EnumerationValueFinalizer:
 
     def finalize_record(self):
         sn0 = self.record.seqnum0()
+        if sn0 is None:
+            # if we don't have a seqnum0 then time is meaningless
+            return
 
-        if not self.log.missing():
-            ef = self.record.open_log_file('enums')
+        annfname = os.path.join(self.record.path, 'waves.beat')
+        with Annotator(annfname, afreq = 1000) as anns:
+            # Reread the enums log file in order, and write beat annotations.
             for (sn, ts, line) in self.log.sorted_items():
                 if b'\030' in line:
                     continue
                 ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
                 ts = ts.replace(tzinfo = timezone.utc)
                 sn = self.record.time_map.get_seqnum(ts) or sn
-                if sn0 is None:
-                    sn0 = sn
-                ef.fp.write(('%s\t' % (sn - sn0)).encode()) # XXX
-                ef.fp.write(line.strip())                   # XXX
-                ef.fp.write(b'\n')                          # XXX
+
+                f = line.split(b'\t')
+                if len(f) == 3 and f[0] == b'Annot':
+                    (label, value_physio_id, value) = f
+                    t = _ann_code.get(value_physio_id)
+                    if t:
+                        (anntyp, subtyp, aux) = t
+                    else:
+                        anntyp = _ann_letter.get(value[:1],
+                                                 AnnotationType.UNKNOWN)
+                        subtyp = 0
+                        aux = b'[' + value_physio_id + b'] ' + value
+                    anns.put(time = (sn - sn0), chan = 255,
+                             anntyp = anntyp, subtyp = subtyp, aux = aux)
