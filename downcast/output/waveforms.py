@@ -24,7 +24,7 @@ from decimal import Decimal
 
 from ..messages import WaveSampleMessage
 from ..attributes import WaveAttr
-from .wfdb import join_segments
+from .wfdb import (AnnotationType, Annotator, join_segments, SegmentHeader)
 
 class WaveSampleHandler:
     def __init__(self, archive):
@@ -613,6 +613,79 @@ class WaveSampleFinalizer:
                 n = int(f.split('.')[0])
                 segments.append((n, f))
         segments.sort()
-        if segments:
-            headers = [os.path.join(record.path, s[1]) for s in segments]
-            join_segments(os.path.join(record.path, 'waves.hea'), headers)
+        if not segments:
+            return
+        headers = [os.path.join(record.path, s[1]) for s in segments]
+        join_segments(os.path.join(record.path, 'waves.hea'), headers)
+
+        # Read _wq files and write wave quality annotations
+        annfname = os.path.join(self.record.path, 'waves.wq')
+        with Annotator(annfname, afreq = 1000) as wqanns:
+            layoutfname = os.path.join(record.path, 'waves_layout.hea')
+            layout = SegmentHeader(layoutfname)
+            for (chan, sig) in enumerate(layout.signals):
+                try:
+                    wqfname = os.path.join(record.path, '_wq_%s' % sig.desc)
+                    wqfile = open(wqfname, 'rb')
+                except FileNotFoundError:
+                    continue
+
+                ppat = re.compile(b'P(\d+)\n')
+                ipat = re.compile(b'I(\d+)-(\d+)\n')
+                upat = re.compile(b'U(\d+)-(\d+)\n')
+
+                # events[t][0] = number of "invalid" intervals at time t
+                #                minus number of intervals at time (t-1)
+                # events[t][1] = number of "unavailable" intervals at time t
+                #                minus number of intervals at time (t-1)
+                events = {}
+                for line in wqfile:
+                    # Paced pulses: write a single annotation for each
+                    m = ppat.fullmatch(line)
+                    if m:
+                        t = int(m.group(1))
+                        wqanns.put(time = int(m.group(1)), chan = chan,
+                                   anntyp = AnnotationType.PACESP)
+                        continue
+
+                    # Invalid and unavailable samples: update counters
+                    # so we can write an annotation when the sample
+                    # state goes from "invalid" to "not invalid" and
+                    # vice versa.
+                    m = ipat.fullmatch(line)
+                    if m:
+                        t0 = int(m.group(1))
+                        t1 = int(m.group(2))
+                        e0 = events.setdefault(t0, [0, 0])
+                        e0[0] += 1
+                        e1 = events.setdefault(t1, [0, 0])
+                        e1[0] -= 1
+                        continue
+                    m = upat.fullmatch(line)
+                    if m:
+                        t0 = int(m.group(1))
+                        t1 = int(m.group(2))
+                        e0 = events.setdefault(t0, [0, 0])
+                        e0[1] += 1
+                        e1 = events.setdefault(t1, [0, 0])
+                        e1[1] -= 1
+                        continue
+                wqfile.close()
+                icount = ucount = 0
+                for (t, e) in sorted(events.items()):
+                    prev_icount = icount
+                    prev_ucount = ucount
+                    icount += e[0]
+                    ucount += e[1]
+                    if icount and not prev_icount:
+                        wqanns.put(time = t, chan = chan,
+                                   anntyp = AnnotationType.NOTE, aux = '(i')
+                    if prev_icount and not icount:
+                        wqanns.put(time = t, chan = chan,
+                                   anntyp = AnnotationType.NOTE, aux = 'i)')
+                    if ucount and not prev_ucount:
+                        wqanns.put(time = t, chan = chan,
+                                   anntyp = AnnotationType.NOTE, aux = '(u')
+                    if prev_ucount and not ucount:
+                        wqanns.put(time = t, chan = chan,
+                                   anntyp = AnnotationType.NOTE, aux = 'u)')
