@@ -97,7 +97,7 @@ class NumericValueFinalizer:
             num_columns = sorted(self.all_numerics)
             num_index = {n: i + 1 for i, n in enumerate(num_columns)}
 
-            nf = self.record.open_log_file('numerics.csv')
+            nf = self.record.open_log_file('numerics.csv', truncate = True)
             row = [b'"time"']
             for name in num_columns:
                 row.append(b'"' + name.replace(b'"', b'""') + b'"')

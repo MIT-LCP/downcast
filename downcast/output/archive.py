@@ -339,9 +339,14 @@ class ArchiveRecord:
         except (KeyError, TypeError, ValueError):
             return default
 
-    def open_log_file(self, name):
+    def open_log_file(self, name, truncate = False):
         if name not in self.files:
             fname = os.path.join(self.path, name)
+            if truncate:
+                try:
+                    os.unlink(fname)
+                except FileNotFoundError:
+                    pass
             self.files[name] = ArchiveLogFile(fname)
             self.modified = True
         return self.files[name]
