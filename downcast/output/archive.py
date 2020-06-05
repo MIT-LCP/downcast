@@ -325,7 +325,11 @@ class ArchiveRecord:
 
     def get_str_property(self, path, default = None):
         try:
-            return str(self.get_property(path))
+            value = self.get_property(path)
+            if isinstance(value, str):
+                return value
+            else:
+                return default
         except (KeyError, TypeError):
             return default
 
