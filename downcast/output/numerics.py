@@ -62,10 +62,11 @@ class NumericValueHandler:
 
         # Write the value to the log file
         lbl = string_to_ascii(attr.sub_label)
+        ulbl = string_to_ascii(attr.unit_label)
         val = msg.value
         if val is None:
             val = ''
-        logfile.append('%s\t%s' % (lbl, val))
+        logfile.append('%s\t%s\t%s' % (lbl, val, ulbl))
         source.ack_message(chn, msg, self)
 
     def flush(self):
@@ -88,7 +89,11 @@ class NumericValueFinalizer:
                 parts = line.rstrip(b'\n').split(b'\t')
                 # ignore nulls
                 if len(parts) > 1 and parts[1]:
-                    self.all_numerics.add(parts[0])
+                    # temporary backward compatibility
+                    if len(parts) > 2:
+                        self.all_numerics.add((parts[0], parts[2]))
+                    else:
+                        self.all_numerics.add((parts[0], '?'))
 
     def finalize_record(self):
         sn0 = self.record.seqnum0()
@@ -99,8 +104,9 @@ class NumericValueFinalizer:
 
             nf = self.record.open_log_file('numerics.csv', truncate = True)
             row = [b'"time"']
-            for name in num_columns:
-                row.append(b'"' + name.replace(b'"', b'""') + b'"')
+            for (name, units) in num_columns:
+                desc = name + b' [' + units + b']'
+                row.append(b'"' + desc.replace(b'"', b'""') + b'"')
             cur_ts = None
             cur_sn = None
             cur_time = None
@@ -111,6 +117,11 @@ class NumericValueFinalizer:
                 # ignore nulls
                 if len(parts) < 2 or not parts[1]:
                     continue
+                # temporary backward compatibility
+                if len(parts) > 2:
+                    col_id = (parts[0], parts[2])
+                else:
+                    col_id = (parts[0], '?')
 
                 # determine new time value
                 if ts == cur_ts and sn == cur_sn:
@@ -133,7 +144,7 @@ class NumericValueFinalizer:
                     nf.fp.write(b','.join(row))
                     nf.fp.write(b'\n')
                     row = [time] + [b''] * len(self.all_numerics)
-                row[num_index[parts[0]]] = parts[1].rstrip(b'0').rstrip(b'.')
+                row[num_index[col_id]] = parts[1].rstrip(b'0').rstrip(b'.')
             # write the final row
             nf.fp.write(b','.join(row))
             nf.fp.write(b'\n')
