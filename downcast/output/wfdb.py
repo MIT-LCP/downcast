@@ -313,37 +313,40 @@ class SegmentHeader:
             raise ValueError('invalid header file name')
         recname = recname[:-4]
 
+        text = []
+        if self.min_version:
+            text.append('#wfdb %s\n' % version_to_str(self.min_version))
+        text.append('%s %d %.16g' % (recname, len(self.signals), self.ffreq))
+        if self.cfreq != self.ffreq or self.basecount != 0:
+            text.append('/%.16g' % (self.cfreq,))
+            if self.basecount != 0:
+                text.append('(%.16g)' % (self.basecount,))
+        if self.nframes is not None:
+            text.append(' %d' % (self.nframes,))
+        text.append('\n')
+
+        for sig in self.signals:
+            text.append('%s %d' % (sig.fname, sig.fmt))
+            if sig.spf != 1:
+                text.append('x%d' % (sig.spf,))
+            if sig.skew != 0:
+                text.append(':%d' % (sig.skew,))
+            if sig.start != 0:
+                text.append(':%d' % (sig.start,))
+            text.append(' %.16g' % (sig.gain,))
+            if sig.baseline != sig.adczero:
+                text.append('(%d)' % (sig.baseline,))
+            if sig.units is not None:
+                text.append('/%s' % (sig.units,))
+            text.append(' %d %d %d %d %d %s\n'
+                     % (sig.adcres, sig.adczero, sig.initval,
+                        sig.cksum, sig.bsize, sig.desc))
+        for info in self.info:
+            text.append('#%s\n' % (info,))
+
+        text = ''.join(text)
         with open(path, 'wt', encoding = 'UTF-8') as hf:
-            if self.min_version:
-                hf.write('#wfdb %s\n' % version_to_str(self.min_version))
-            hf.write('%s %d %.16g' % (recname, len(self.signals), self.ffreq))
-            if self.cfreq != self.ffreq or self.basecount != 0:
-                hf.write('/%.16g' % (self.cfreq,))
-                if self.basecount != 0:
-                    hf.write('(%.16g)' % (self.basecount,))
-            if self.nframes is not None:
-                hf.write(' %d' % (self.nframes,))
-            hf.write('\n')
-
-            for sig in self.signals:
-                hf.write('%s %d' % (sig.fname, sig.fmt))
-                if sig.spf != 1:
-                    hf.write('x%d' % (sig.spf,))
-                if sig.skew != 0:
-                    hf.write(':%d' % (sig.skew,))
-                if sig.start != 0:
-                    hf.write(':%d' % (sig.start,))
-                hf.write(' %.16g' % (sig.gain,))
-                if sig.baseline != sig.adczero:
-                    hf.write('(%d)' % (sig.baseline,))
-                if sig.units is not None:
-                    hf.write('/%s' % (sig.units,))
-                hf.write(' %d %d %d %d %d %s\n'
-                         % (sig.adcres, sig.adczero, sig.initval,
-                            sig.cksum, sig.bsize, sig.desc))
-            for info in self.info:
-                hf.write('#%s\n' % (info,))
-
+            hf.write(text)
             if fsync:
                 hf.flush()
                 fdatasync(hf.fileno())
