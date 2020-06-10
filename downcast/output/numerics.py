@@ -133,7 +133,7 @@ class NumericValueFinalizer:
                     nf.fp.write(b','.join(row))
                     nf.fp.write(b'\n')
                     row = [time] + [b''] * len(self.all_numerics)
-                row[num_index[parts[0]]] = parts[1]
+                row[num_index[parts[0]]] = parts[1].rstrip(b'0').rstrip(b'.')
             # write the final row
             nf.fp.write(b','.join(row))
             nf.fp.write(b'\n')
