@@ -82,53 +82,52 @@ class WaveSampleHandler:
         msg_start -= msg_start % tps
         msg_end = msg_start + nsamples * tps
 
-        # If we have already flushed past the end of this message,
-        # nothing to do
-        if info.flushed_time is not None and msg_end < info.flushed_time:
+        # If we have already saved this time interval, nothing to do
+        if info.interval_is_saved(msg_start, msg_end):
             self._write_events(record, msg, attr, msg_start, tps)
             source.ack_message(chn, msg, self)
             return
 
-        # Add signal data to the buffer
-        for (vstart, vend) in _valid_sample_intervals(msg):
-            t0 = msg_start + vstart * tps
-            t1 = msg_start + vend * tps
+        if info.pending_start_time is None:
+            info.pending_start_time = info.pending_end_time = msg_start
+
+        updated = False
+
+        if info.pending_start_time <= msg_start <= info.pending_end_time:
+            # If this message overlaps with the existing buffered
+            # data, then assume we have now seen all data between
+            # pending_start_time and msg_start.
+            if info.pending_start_time < msg_start:
+                info.write_pending_signals(record, msg_start)
+                updated = True
+        else:
+            # If this message is later than pending_end_time, then we
+            # have a gap.  If this message is earlier than
+            # pending_start_time (but this message itself has not yet
+            # been saved), then we have a clock inconsistency.  In
+            # either case, assume that we have now seen all data
+            # between pending_start_time and pending_end_time.
+            if msg_start < info.pending_start_time:
+                logging.warning('waveforms out of order at %s (%s) in %s'
+                                % (msg_start, msg.timestamp,
+                                   record.record_id))
+            if info.pending_start_time < info.pending_end_time:
+                info.write_pending_signals(record, info.pending_end_time)
+                updated = True
+            info.pending_start_time = info.pending_end_time = msg_start
+
+        # Add signal data to the buffer.
+        for (t0, t1) in info.unsaved_intervals(msg_start, msg_end):
+            vstart = (t0 - msg_start) // tps
+            vend = (t1 - msg_start) // tps
             s = msg.wave_samples[2*vstart:2*vend]
             info.signal_buffer.add_signal(attr, tps, t0, s)
+            info.pending_end_time = max(t1, info.pending_end_time)
 
-        if info.last_seen_time is None or msg_start > info.last_seen_time:
-            info.last_seen_time = msg_start
-
-        # Determine how far we can flush up to (assuming all waves
-        # prior to flush_time have now been recorded in the buffer)
+        # If message is expiring, need to save all data from this
+        # message NOW.
         if ttl <= 0:
-            flush_time = msg_end
-        else:
-            flush_time = info.last_seen_time
-
-        # FIXME: when finalizing the record, want to flush all
-        # remaining data
-
-        # Write out buffered data up to flush_time
-        updated = False
-        while (info.flushed_time is None or info.flushed_time < flush_time):
-            if info.flushed_time is not None:
-                info.signal_buffer.truncate_before(info.flushed_time)
-
-            (start, end, sigdata) = info.signal_buffer.get_signals()
-            if sigdata is None or start >= flush_time:
-                break
-            if end > flush_time:
-                end = flush_time
-            if (info.flushed_time is not None and end <= info.flushed_time):
-                break
-            info.write_signals(record, start, end, sigdata)
-            info.flushed_time = end
-            record.set_property(['waves', 'flushed_time'], info.flushed_time)
-            updated = True
-
-        # If the entire message has now been written, then acknowledge it
-        if (info.flushed_time is not None and info.flushed_time >= msg_end):
+            info.write_pending_signals(record, msg_end)
             self._write_events(record, msg, attr, msg_start, tps)
             source.ack_message(chn, msg, self)
         # otherwise, check if we are now able to acknowledge older messages
@@ -171,27 +170,6 @@ def _parse_interval_list(text):
     """Parse an ASCII string into a list of pairs of integers."""
     l = _parse_sample_list(text)
     return list(zip(l[0::2], l[1::2]))
-
-def _valid_sample_intervals(msg):
-    """Get a list of valid sample intervals in a WaveSampleMessage."""
-
-    # This excludes all samples that are either 'invalid' or 'unavailable'.
-
-    # XXX Determine what the difference is.  Also consider excluding,
-    # e.g., zeroes (if they are out of range.)
-
-    isl = _parse_interval_list(msg.invalid_samples)
-    usl = _parse_interval_list(msg.unavailable_samples)
-    cur = 0
-    nsamples = len(msg.wave_samples) // 2
-    # for (start, end) in sorted(isl + usl):
-    #     if start <= end and start <= nsamples:
-    #         if start > cur:
-    #             yield (cur, start)
-    #         cur = end + 1
-    # if nsamples > cur:
-    #     yield (cur, nsamples)
-    yield (0, nsamples)
 
 ################################################################
 
@@ -265,12 +243,21 @@ class WaveOutputInfo:
     def __init__(self, record):
         # Pending message data - not saved to disk
         self.signal_buffer = SignalBuffer()
-        self.last_seen_time = None
+        self.pending_start_time = None
+        self.pending_end_time = None
 
         # Persistent state
 
-        # flushed_time: time at which all signal data has been written
-        self.flushed_time = record.get_int_property(['waves', 'flushed_time'])
+        # saved_intervals: list of intervals for which signal data
+        # has been written
+        self.saved_intervals = []
+        try:
+            intervals = record.get_property(['waves', 'saved_intervals'])
+            for (start, end) in intervals:
+                self.saved_intervals.append([int(start), int(end)])
+        except (KeyError, TypeError):
+            pass
+        self.saved_intervals.sort()
 
         # segment_name: name of the currently open segment, if any
         self.segment_name = record.get_str_property(['waves', 'segment_name'])
@@ -346,6 +333,63 @@ class WaveOutputInfo:
         record.set_property(['waves', 'signal_file'], None)
         record.set_property(['waves', 'segment_start'], None)
         record.set_property(['waves', 'segment_end'], None)
+
+    def interval_is_saved(self, start, end):
+        for (saved_start, saved_end) in reversed(self.saved_intervals):
+            if end > saved_end:
+                return False
+            elif start >= saved_start:
+                return True
+        return False
+
+    def unsaved_intervals(self, start, end):
+        intervals = []
+        for (saved_start, saved_end) in reversed(self.saved_intervals):
+            if start >= saved_end:
+                break
+            if end > saved_end:
+                intervals.append([saved_end, end])
+            if end > saved_start:
+                end = saved_start
+                if end <= start:
+                    break
+        if start < end:
+            intervals.append([start, end])
+        return intervals
+
+    def mark_saved(self, record, start, end):
+        if (self.saved_intervals
+                and start <= self.saved_intervals[-1][1]
+                and start >= self.saved_intervals[-1][0]):
+            # extend last interval
+            if self.saved_intervals[-1][1] < end:
+                self.saved_intervals[-1][1] = end
+        else:
+            # check and merge with other saved intervals
+            before = []
+            after = []
+            for i in self.saved_intervals:
+                if i[1] < start:
+                    before.append(i)
+                elif i[0] > end:
+                    after.append(i)
+                else:
+                    start = min(start, i[0])
+                    end = max(end, i[1])
+            self.saved_intervals = before + [[start, end]] + after
+        record.set_property(['waves', 'saved_intervals'], self.saved_intervals)
+
+    def write_pending_signals(self, record, end):
+        while self.pending_start_time < end:
+            (chunkstart, chunkend, sigdata) = self.signal_buffer.get_signals()
+            if sigdata is None or chunkstart >= end:
+                break
+            if chunkend > end:
+                chunkend = end
+            self.write_signals(record, chunkstart, chunkend, sigdata)
+            self.mark_saved(record, self.pending_start_time, chunkend)
+            self.signal_buffer.truncate_before(chunkend)
+            self.pending_start_time = chunkend
 
     def _write_header(self, record, segname, datname, start, end, signals):
         # FIXME: use ArchiveRecord...
