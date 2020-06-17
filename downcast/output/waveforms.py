@@ -652,7 +652,7 @@ class WaveSampleFinalizer:
         # Find all segments and construct the multi-segment header
         segments = []
         for f in os.listdir(record.path):
-            if re.fullmatch(r'[0-9]+\.hea', f):
+            if re.fullmatch(r'-?[0-9]+\.hea', f):
                 n = int(f.split('.')[0])
                 segments.append((n, f))
         segments.sort()

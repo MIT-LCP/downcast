@@ -393,7 +393,7 @@ def join_segments(record_header, segment_headers, layout_suffix = '_layout',
     cfreq = None
     signals = collections.OrderedDict()
     segments = [(layout_name, 0)]
-    basecount = 0
+    basecount = None
     end = 0
     prevsegment = '(start of record)'
     min_version = ()
@@ -405,6 +405,7 @@ def join_segments(record_header, segment_headers, layout_suffix = '_layout',
         if ffreq is None:
             ffreq = seg.ffreq
             cfreq = seg.cfreq
+            basecount = min(0, seg.basecount)
         else:
             if ffreq != seg.ffreq:
                 raise ValueError('ffreq mismatch in segment %s' % (seg.name,))
