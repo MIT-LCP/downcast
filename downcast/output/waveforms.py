@@ -571,9 +571,8 @@ class WaveOutputInfo:
                     sv = zsub
                 sf.write(ind * 2, sv)
 
-        if end > self.segment_end:
-            self.segment_end = end
-            record.set_property(['waves', 'segment_end'], self.segment_end)
+        self.segment_end = end
+        record.set_property(['waves', 'segment_end'], self.segment_end)
 
 ################################################################
 
