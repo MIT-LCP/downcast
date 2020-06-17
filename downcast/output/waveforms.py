@@ -16,6 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import array
 import os
 import heapq
 import logging
@@ -239,6 +240,19 @@ def _fromdec(val):
     else:
         return str(val)
 
+# Convert little-endian byte array to array of integers
+if array.array('h', [0x1234]).tobytes() == b'\x34\x12':
+    def _bytestoint16(val):
+        arr = array.array('h')
+        arr.frombytes(val)
+        return arr
+elif array.array('h', [0x1234]).tobytes() == b'\x12\x34':
+    def _bytestoint16(val):
+        arr = array.array('h')
+        arr.frombytes(val)
+        arr.byteswap()
+        return arr
+
 class WaveOutputInfo:
     def __init__(self, record):
         # Pending message data - not saved to disk
@@ -277,10 +291,13 @@ class WaveOutputInfo:
         # signals: list of signal attributes
         self.segment_signals = []
         self.frame_offset = {}
+        self.sample_min = {}
+        self.sample_max = {}
+        self.sample_sum = {}
         self.frame_size = 0
         try:
             siginfo = record.get_property(['waves', 'signals'])
-            for s in siginfo:
+            for (snum, s) in enumerate(siginfo):
                 attr = WaveAttr(
                     base_physio_id        = s['base_physio_id'],
                     physio_id             = s['physio_id'],
@@ -305,6 +322,13 @@ class WaveOutputInfo:
                 )
                 self.segment_signals.append(attr)
 
+                self.sample_min[attr] = record.get_int_property(
+                    ['waves', 'sample_min', str(snum)], 32767)
+                self.sample_max[attr] = record.get_int_property(
+                    ['waves', 'sample_max', str(snum)], -32768)
+                self.sample_sum[attr] = record.get_int_property(
+                    ['waves', 'sample_sum', str(snum)], 0)
+
                 # FIXME: maybe spf should be stored in properties explicitly
                 spf = -(-_tpf // attr.sample_period)
                 self.frame_offset[attr] = self.frame_size
@@ -328,11 +352,17 @@ class WaveOutputInfo:
         self.segment_signals = []
         self.segment_start = None
         self.frame_offset = {}
+        self.sample_min = {}
+        self.sample_max = {}
+        self.sample_sum = {}
         self.frame_size = None
         record.set_property(['waves', 'signals'], [])
         record.set_property(['waves', 'signal_file'], None)
         record.set_property(['waves', 'segment_start'], None)
         record.set_property(['waves', 'segment_end'], None)
+        record.set_property(['waves', 'sample_min'], {})
+        record.set_property(['waves', 'sample_max'], {})
+        record.set_property(['waves', 'sample_sum'], {})
 
     def interval_is_saved(self, start, end):
         for (saved_start, saved_end) in reversed(self.saved_intervals):
@@ -395,7 +425,6 @@ class WaveOutputInfo:
         # FIXME: use ArchiveRecord...
         heaname = segname + '.hea'
         heapath = os.path.join(record.path, heaname)
-        self.frame_size = 0
         with open(heapath, 'wt', encoding = 'UTF-8') as hf:
             hf.write('%s %d %g/1000(%d)'
                      % (segname, len(signals), _ffreq, start))
@@ -432,12 +461,11 @@ class WaveOutputInfo:
                     baseline = 0
 
                 # scale_lower/scale_upper don't seem to represent the
-                # actual input range.  Let's just assume that the
-                # input range is either 0 to 2^n-1, or -2^(n-1) to
-                # 2^(n-1)-1.
-                sl = signal.scale_lower
-                su = signal.scale_upper
-                if sl is None or su is None or sl >= su:
+                # true range of the signal.  Use the actual observed
+                # minimum and maximum values instead.
+                sl = self.sample_min[signal]
+                su = self.sample_max[signal]
+                if sl is None or su is None or sl > su:
                     adcres = adczero = 0
                 else:
                     adcres = 1
@@ -456,14 +484,16 @@ class WaveOutputInfo:
                 if gain == 0:
                     gain = (1 << adcres)
 
+                cksum = self.sample_sum[signal]
+
                 hf.write('%s %d' % (datname, _fmt))
                 if spf > 1:
                     hf.write('x%d' % spf)
                 hf.write(' %g' % gain)
                 if baseline != adczero:
                     hf.write('(%d)' % baseline)
-                hf.write('/%s %d %d 0 0 0 %s\n'
-                         % (units, adcres, adczero, desc))
+                hf.write('/%s %d %d 0 %d 0 %s\n'
+                         % (units, adcres, adczero, cksum, desc))
 
             # Write additional attributes as info strings.
             for (i, signal) in enumerate(signals):
@@ -496,13 +526,19 @@ class WaveOutputInfo:
 
         datname = segname + '.dat'
 
-        self._write_header(record, segname, datname, start, None, signals)
-
         self.frame_size = 0
+        self.sample_min = {}
+        self.sample_max = {}
+        self.sample_sum = {}
         for signal in signals:
             spf = -(-_tpf // signal.sample_period) # XXX
             self.frame_offset[signal] = self.frame_size
+            self.sample_min[signal] = 32767
+            self.sample_max[signal] = -32768
+            self.sample_sum[signal] = 0
             self.frame_size += spf
+
+        self._write_header(record, segname, datname, start, None, signals)
 
         sigprop = []
         for attr in signals:
@@ -552,16 +588,35 @@ class WaveOutputInfo:
 
         sf = record.open_bin_file(self.signal_file)
 
+        if start < self.segment_end:
+            # this shouldn't happen
+            logging.warning('skipping already-written data')
+            if end < self.segment_end:
+                return
+            nsigdata = {}
+            for (signal, samples) in sigdata.items():
+                skip = (self.segment_end - start) // signal.sample_period
+                nsigdata[signal] = samples[2*skip:]
+            start = self.segment_end
+            sigdata = nsigdata
+
         # FIXME: this could be waaaay optimized, and should be
 
-        for (signal, samples) in sigdata.items():
+        for (snum, signal) in enumerate(signals):
+            samples = sigdata[signal]
             spf = -(-_tpf // signal.sample_period)
             t0 = (start - self.segment_start) // signal.sample_period
             n = (end - start) // signal.sample_period
             if signal.scale_lower and signal.scale_lower > 0:
                 zsub = b'\0\x80'
+                ssub = -32768
             else:
                 zsub = b'\0\0'
+                ssub = 0
+            svalues = _bytestoint16(samples[0:2*n])
+            smin = min(svalues)
+            smax = max(svalues)
+            ssum = sum(svalues)
             for i in range(0, n):
                 fn = (t0 + i) // spf
                 sn = (t0 + i) % spf
@@ -569,7 +624,18 @@ class WaveOutputInfo:
                 sv = samples[2*i:2*i+2]
                 if sv == b'\0\0':
                     sv = zsub
+                    ssum += ssub
                 sf.write(ind * 2, sv)
+
+            smin = min(self.sample_min[signal], smin)
+            smax = max(self.sample_max[signal], smax)
+            ssum = (ssum + self.sample_sum[signal]) & 0xffff
+            self.sample_min[signal] = smin
+            self.sample_max[signal] = smax
+            self.sample_sum[signal] = ssum
+            record.set_property(['waves', 'sample_min', str(snum)], smin)
+            record.set_property(['waves', 'sample_max', str(snum)], smax)
+            record.set_property(['waves', 'sample_sum', str(snum)], ssum)
 
         self.segment_end = end
         record.set_property(['waves', 'segment_end'], self.segment_end)
