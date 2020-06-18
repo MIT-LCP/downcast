@@ -96,14 +96,15 @@ class AlertFinalizer:
 
             (alert_id, event, severity, state, label) = _parse_info(line)
             if event == b'!':
-                if ts < self.alert_onset.setdefault(alert_id, ts):
-                    self.alert_onset[alert_id] = ts
+                if (sn, ts) < self.alert_onset.setdefault(alert_id, (sn, ts)):
+                    self.alert_onset[alert_id] = (sn, ts)
             elif event == b'+':
-                if ts < self.alert_announce.setdefault(alert_id, ts):
-                    self.alert_announce[alert_id] = ts
+                if (sn, ts) < self.alert_announce.setdefault(alert_id,
+                                                             (sn, ts)):
+                    self.alert_announce[alert_id] = (sn, ts)
             elif event == b'-':
-                if ts > self.alert_end.setdefault(alert_id, ts):
-                    self.alert_end[alert_id] = ts
+                if (sn, ts) < self.alert_end.setdefault(alert_id, (sn, ts)):
+                    self.alert_end[alert_id] = (sn, ts)
 
     def finalize_record(self):
         sn0 = self.record.seqnum0()
@@ -114,6 +115,24 @@ class AlertFinalizer:
         alert_first = {}
         alert_last = {}
         alert_num = {}
+
+        announce_t = {}
+        for (alert_id, (sn, ts)) in self.alert_announce.items():
+            sn = self.record.time_map.get_seqnum(ts, sn + 5120)
+            if sn is None:
+                continue
+            announce_t[alert_id] = sn - sn0
+
+        end_t = {}
+        for (alert_id, (sn, ts)) in self.alert_end.items():
+            # alert end time may actually be slightly later than
+            # time of the message.  why?  no idea.  how do these
+            # timestamps work in regard to system clock
+            # adjustments?  no idea.
+            sn = self.record.time_map.get_seqnum(ts, sn + 15120)
+            if sn is None:
+                continue
+            end_t[alert_id] = sn - sn0
 
         annfname = os.path.join(self.record.path, 'waves.alarm')
         with Annotator(annfname, afreq = 1000) as anns:
@@ -131,7 +150,7 @@ class AlertFinalizer:
                     continue
                 ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
                 ts = ts.replace(tzinfo = timezone.utc)
-                sn = self.record.time_map.get_seqnum(ts) or sn
+                sn = self.record.time_map.get_seqnum(ts, sn + 5120) or sn
                 t = sn - sn0
 
                 (alert_id, event, severity, state, label) = _parse_info(line)
@@ -141,37 +160,32 @@ class AlertFinalizer:
                     newstate = (severity, state, label)
                     alert_first.setdefault(alert_id, newstate)
                     alert_last[alert_id] = newstate
-                    announce = self.alert_announce.get(alert_id)
-                    end = self.alert_end.get(alert_id)
+                    announce = announce_t.get(alert_id, t)
+                    end = end_t.get(alert_id, t)
                     if (oldstate and oldstate != newstate
-                          and (not announce or ts > announce)
-                          and (not end or ts < end)):
+                            and announce <= t <= end):
                         _put_annot(anns, t, num, b';', severity, state, label)
 
-            for (alert_id, ts) in self.alert_onset.items():
+            for (alert_id, (sn, ts)) in self.alert_onset.items():
                 num = alert_num.get(alert_id)
-                sn = self.record.time_map.get_seqnum(ts)
+                sn = self.record.time_map.get_seqnum(ts, sn + 5120)
                 if num is None or sn is None:
                     continue
                 t = sn - sn0
                 (severity, state, label) = alert_first[alert_id]
                 _put_annot(anns, t, num, b'+', severity, state, label)
 
-            for (alert_id, ts) in self.alert_announce.items():
+            for (alert_id, t) in announce_t.items():
                 num = alert_num.get(alert_id)
-                sn = self.record.time_map.get_seqnum(ts)
-                if num is None or sn is None:
+                if num is None:
                     continue
-                t = sn - sn0
                 (severity, state, label) = alert_first[alert_id]
                 _put_annot(anns, t, num, b'<', severity, state, label)
 
-            for (alert_id, ts) in self.alert_end.items():
+            for (alert_id, t) in end_t.items():
                 num = alert_num.get(alert_id)
-                sn = self.record.time_map.get_seqnum(ts)
-                if num is None or sn is None:
+                if num is None:
                     continue
-                t = sn - sn0
                 (severity, state, label) = alert_last[alert_id]
                 _put_annot(anns, t, num, b'>', severity, state, label)
 
