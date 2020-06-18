@@ -88,12 +88,8 @@ class NumericValueFinalizer:
             if b'\030' not in line:
                 parts = line.rstrip(b'\n').split(b'\t')
                 # ignore nulls
-                if len(parts) > 1 and parts[1]:
-                    # temporary backward compatibility
-                    if len(parts) > 2:
-                        self.all_numerics.add((parts[0], parts[2]))
-                    else:
-                        self.all_numerics.add((parts[0], '?'))
+                if len(parts) >= 3 and parts[1]:
+                    self.all_numerics.add((parts[0], parts[2]))
 
     def finalize_record(self):
         sn0 = self.record.seqnum0()
@@ -115,13 +111,9 @@ class NumericValueFinalizer:
                     continue
                 parts = line.rstrip(b'\n').split(b'\t')
                 # ignore nulls
-                if len(parts) < 2 or not parts[1]:
+                if len(parts) < 3 or not parts[1]:
                     continue
-                # temporary backward compatibility
-                if len(parts) > 2:
-                    col_id = (parts[0], parts[2])
-                else:
-                    col_id = (parts[0], '?')
+                col_id = (parts[0], parts[2])
 
                 # determine new time value
                 if ts == cur_ts and sn == cur_sn:
