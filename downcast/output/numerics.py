@@ -105,7 +105,7 @@ class NumericValueFinalizer:
             nf = self.record.open_log_file('numerics.csv', truncate = True)
             row = [b'"time"']
             for (name, units) in num_columns:
-                desc = name + b' [' + units + b']'
+                desc = name + b' [' + (units or b'NU') + b']'
                 row.append(b'"' + desc.replace(b'"', b'""') + b'"')
             cur_ts = None
             cur_sn = None
