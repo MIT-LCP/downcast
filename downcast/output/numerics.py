@@ -121,7 +121,7 @@ class NumericValueFinalizer:
                 else:
                     ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
                     ts = ts.replace(tzinfo = timezone.utc)
-                    sn = self.record.time_map.get_seqnum(ts) or sn
+                    sn = self.record.time_map.get_seqnum(ts, sn + 5120) or sn
                     if sn0 is None:
                         sn0 = sn
                     # Time measured in counter ticks, ick.
