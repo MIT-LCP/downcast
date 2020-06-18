@@ -135,7 +135,7 @@ class EnumerationValueFinalizer:
                     continue
                 ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
                 ts = ts.replace(tzinfo = timezone.utc)
-                sn = self.record.time_map.get_seqnum(ts) or sn
+                sn = self.record.time_map.get_seqnum(ts, sn + 5120) or sn
 
                 f = line.split(b'\t')
                 if len(f) == 3 and f[0] == b'Annot':
