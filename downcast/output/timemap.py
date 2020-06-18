@@ -148,18 +148,52 @@ class TimeMap:
             if time <= end:
                 return
 
-    def get_seqnum(self, time):
+    def get_seqnum(self, time, limit = None):
         """
         Guess the sequence number corresponding to a wall-clock time.
 
+        limit should be the latest possible value (inclusive) for this
+        sequence number.  Typically, if the message sequence number is
+        N, then it should be impossible for any event to have occurred
+        at time greater than (N + 5120).
+
         If no information is available, this will return None.
         """
-        for e in self.entries[:-1]:
-            end = e[2] + timedelta(milliseconds = e[1])
-            if time <= end:
-                return delta_ms(time, e[2])
-        if self.entries:
-            return delta_ms(time, self.entries[-1][2])
+
+        if not self.entries:
+            return None
+
+        if limit is None:
+            limit = self.entries[-1][1]
+
+        # If this timestamp falls within a known interval - there is
+        # an instant at which we know the system clock would have
+        # displayed that value - then choose the latest such instant
+        # that is before or equal to 'limit'.
+        possible_sn = []
+        best_known = None
+        for (start, end, base, _) in self.entries:
+            sn = delta_ms(time, base)
+            possible_sn.append((sn, end))
+            if start <= sn <= end and sn <= limit:
+                best_known = sn
+        if best_known is not None:
+            return best_known
+
+        # Otherwise, take the earliest interval for which this
+        # timestamp would appear to be in the past.  (So, if the
+        # system clock never displayed this timestamp, then translate
+        # according to the next reference timestamp *after* this
+        # point.  If the system clock displayed this timestamp
+        # multiple times, but all of those occurred after 'limit',
+        # then choose the earliest.)
+        for (sn, interval_end) in possible_sn:
+            if sn <= interval_end:
+                return sn
+
+        # Otherwise, the timestamp occurs in the future; extrapolate
+        # from the *last* reference timestamp.
+        return possible_sn[-1][0]
 
     def resolve_gaps(self):
         """
