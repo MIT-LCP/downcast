@@ -95,15 +95,27 @@ class AlertFinalizer:
             record.time_map.add_time(ts)
 
             (alert_id, event, severity, state, label) = _parse_info(line)
+            # If there are multiple recorded onset times, save the one
+            # that was recorded first (smallest sequence number.)
+            # Save the earliest onset timestamp that was recorded at
+            # that sequence number.
             if event == b'!':
                 if (sn, ts) < self.alert_onset.setdefault(alert_id, (sn, ts)):
                     self.alert_onset[alert_id] = (sn, ts)
+            # If there are multiple recorded announce times, save the
+            # one that was recorded first (smallest sequence number.)
+            # Save the earliest announce timestamp that was recorded
+            # at that sequence number.
             elif event == b'+':
                 if (sn, ts) < self.alert_announce.setdefault(alert_id,
                                                              (sn, ts)):
                     self.alert_announce[alert_id] = (sn, ts)
+            # If there are multiple recorded end times, save the one
+            # that was recorded last (largest sequence number.)  Save
+            # the latest end timestamp that was recorded at that
+            # sequence number.
             elif event == b'-':
-                if (sn, ts) < self.alert_end.setdefault(alert_id, (sn, ts)):
+                if (sn, ts) > self.alert_end.setdefault(alert_id, (sn, ts)):
                     self.alert_end[alert_id] = (sn, ts)
 
     def finalize_record(self):
