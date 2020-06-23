@@ -25,7 +25,8 @@ from decimal import Decimal
 
 from ..messages import WaveSampleMessage
 from ..attributes import WaveAttr
-from .wfdb import (AnnotationType, Annotator, join_segments, SegmentHeader)
+from .wfdb import (AnnotationType, Annotator, join_segments,
+                   SegmentHeader, SignalInfo)
 
 class WaveSampleHandler:
     def __init__(self, archive):
@@ -425,101 +426,102 @@ class WaveOutputInfo:
         # FIXME: use ArchiveRecord...
         heaname = segname + '.hea'
         heapath = os.path.join(record.path, heaname)
-        with open(heapath, 'wt', encoding = 'UTF-8') as hf:
-            hf.write('%s %d %g/1000(%d)'
-                     % (segname, len(signals), _ffreq, start))
-            if end is not None:
-                hf.write(' %d' % ((end - start) // _tpf))
-            hf.write('\n')
-            sigdesc = []
-            for signal in signals:
-                (units, desc) = _get_signal_units_desc(signal)
-                while desc in sigdesc:
-                    desc += '+'
-                sigdesc.append(desc)
 
-                spf = -(-_tpf // signal.sample_period) # XXX
+        header = SegmentHeader()
+        header.ffreq = _ffreq
+        header.cfreq = 1000
+        header.basecount = start
+        if end is not None:
+            header.nframes = (end - start) // _tpf
 
-                csl = signal.calibration_scaled_lower
-                csu = signal.calibration_scaled_upper
-                cal = signal.calibration_abs_lower
-                cau = signal.calibration_abs_upper
-                try:
-                    gain = (csu - csl) / (cau - cal)
-                    if units == 'mV':
-                        # ECG signals appear to be consistently
-                        # mislabeled in this way (cal is 0.0 and cau
-                        # is 1.0, but the baseline is roughly halfway
-                        # between csl and csu... which is also roughly
-                        # halfway between sl and su.  Not sure what
-                        # the correct interpretation is.)
-                        baseline = (csl + csu) / 2
-                    else:
-                        baseline = csl - cal * gain
-                except (TypeError, ArithmeticError):
-                    gain = 0
-                    baseline = 0
+        sigdesc = []
+        for (i, signal) in enumerate(signals):
+            (units, desc) = _get_signal_units_desc(signal)
+            while desc in sigdesc:
+                desc += '+'
+            sigdesc.append(desc)
 
-                # scale_lower/scale_upper don't seem to represent the
-                # true range of the signal.  Use the actual observed
-                # minimum and maximum values instead.
-                sl = self.sample_min[signal]
-                su = self.sample_max[signal]
-                if sl is None or su is None or sl > su:
-                    adcres = adczero = 0
+            spf = -(-_tpf // signal.sample_period) # XXX
+
+            csl = signal.calibration_scaled_lower
+            csu = signal.calibration_scaled_upper
+            cal = signal.calibration_abs_lower
+            cau = signal.calibration_abs_upper
+            try:
+                gain = (csu - csl) / (cau - cal)
+                if units == 'mV':
+                    # ECG signals appear to be consistently
+                    # mislabeled in this way (cal is 0.0 and cau
+                    # is 1.0, but the baseline is roughly halfway
+                    # between csl and csu... which is also roughly
+                    # halfway between sl and su.  Not sure what
+                    # the correct interpretation is.)
+                    baseline = (csl + csu) / 2
                 else:
-                    adcres = 1
-                    if sl < 0:
-                        adcmin = -1
-                        adcmax = 1
-                    else:
-                        adcmin = 0
-                        adcmax = 2
-                    while su >= adcmax or sl < adcmin:
-                        adcmin *= 2
-                        adcmax *= 2
-                        adcres += 1
-                    adczero = (adcmin + adcmax) // 2
+                    baseline = csl - cal * gain
+            except (TypeError, ArithmeticError):
+                gain = 0
+                baseline = 0
 
-                if gain == 0:
-                    gain = (1 << adcres)
+            # scale_lower/scale_upper don't seem to represent the
+            # true range of the signal.  Use the actual observed
+            # minimum and maximum values instead.
+            sl = self.sample_min[signal]
+            su = self.sample_max[signal]
+            if sl is None or su is None or sl > su:
+                adcres = adczero = 0
+            else:
+                adcres = 1
+                if sl < 0:
+                    adcmin = -1
+                    adcmax = 1
+                else:
+                    adcmin = 0
+                    adcmax = 2
+                while su >= adcmax or sl < adcmin:
+                    adcmin *= 2
+                    adcmax *= 2
+                    adcres += 1
+                adczero = (adcmin + adcmax) // 2
 
-                cksum = self.sample_sum[signal]
+            if gain == 0:
+                gain = (1 << adcres)
 
-                hf.write('%s %d' % (datname, _fmt))
-                if spf > 1:
-                    hf.write('x%d' % spf)
-                hf.write(' %g' % gain)
-                if baseline != adczero:
-                    hf.write('(%d)' % baseline)
-                hf.write('/%s %d %d 0 %d 0 %s\n'
-                         % (units, adcres, adczero, cksum, desc))
+            cksum = self.sample_sum[signal]
+
+            siginfo = SignalInfo(fname = datname, fmt = _fmt, spf = spf,
+                                 gain = gain, baseline = baseline,
+                                 adcres = adcres, adczero = adczero,
+                                 desc = desc, units = units, cksum = cksum)
+            header.signals.append(siginfo)
 
             # Write additional attributes as info strings.
-            for (i, signal) in enumerate(signals):
-                info = []
+            info = []
 
-                # Report channel number for ECGs.
-                if signal.base_physio_id == 131328:
-                    info.append('channel=%d' % signal.channel)
+            # Report channel number for ECGs.
+            if signal.base_physio_id == 131328:
+                info.append('channel=%d' % signal.channel)
 
-                # Report if signal is derived (e.g. standard limb
-                # leads derived from EASI leads.)
-                if signal.is_derived:
-                    info.append('derived')
+            # Report if signal is derived (e.g. standard limb
+            # leads derived from EASI leads.)
+            if signal.is_derived:
+                info.append('derived')
 
-                # Report filter cutoff frequencies if known.
-                if signal.low_edge_frequency and signal.high_edge_frequency:
-                    info.append('bandpass=[%g,%g]'
-                                % (signal.low_edge_frequency,
-                                   signal.high_edge_frequency))
-                elif signal.low_edge_frequency:
-                    info.append('highpass=%g' % signal.low_edge_frequency)
-                elif signal.high_edge_frequency:
-                    info.append('lowpass=%g' % signal.high_edge_frequency)
-                if info:
-                    hf.write('# signal %d (%s): ' % (i, sigdesc[i]))
-                    hf.write(' '.join(info) + '\n')
+            # Report filter cutoff frequencies if known.
+            if signal.low_edge_frequency and signal.high_edge_frequency:
+                info.append('bandpass=[%g,%g]'
+                            % (signal.low_edge_frequency,
+                               signal.high_edge_frequency))
+            elif signal.low_edge_frequency:
+                info.append('highpass=%g' % signal.low_edge_frequency)
+            elif signal.high_edge_frequency:
+                info.append('lowpass=%g' % signal.high_edge_frequency)
+            if info:
+                infostr = ' signal %d (%s): ' % (i, sigdesc[i])
+                infostr += ' '.join(info)
+                header.info.append(infostr)
+
+        header.write(heapath)
 
     def open_segment(self, record, segname, start, signals):
         self.close_segment(record)
