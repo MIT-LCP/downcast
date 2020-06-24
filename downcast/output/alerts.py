@@ -125,6 +125,8 @@ class AlertFinalizer:
             return
 
         alert_first = {}
+        alert_pre_announce = {}
+        alert_pre_end = {}
         alert_last = {}
         alert_num = {}
 
@@ -150,33 +152,46 @@ class AlertFinalizer:
         with Annotator(annfname, afreq = 1000) as anns:
             # Reread the alerts log file in order.  Assign an integer
             # ID to each alert in order of appearance, and record the
-            # severity, state (silenced or not) and label.  If the
-            # severity/state/label changes between the announce time
-            # and end time, then add an annotation each time it
-            # changes.  The earliest severity/state/label will be
-            # applied to the announce and onset annotations, and the
-            # latest severity/state/label will be applied to the end
-            # annotation.
+            # severity, state (silenced or not) and label.
+            #
+            # Severity/state/label can change from one message to the
+            # next.  For the onset annotation, we use the earliest
+            # message.  For the announcement annotation, we use the
+            # latest message that precedes the announcement time, or
+            # the earliest annotation if there isn't one.  For the end
+            # annotation, we use the latest message that precedes the
+            # end time, or the latest message if there isn't one.  If
+            # there are any state changes between announcement and
+            # end, we add those as additional annotations.
             for (sn, ts, line) in self.log.sorted_items():
                 if b'\030' in line:
                     continue
+
+                (alert_id, event, severity, state, label) = _parse_info(line)
+                if not label:
+                    continue
+
                 ts = datetime.strptime(str(ts), '%Y%m%d%H%M%S%f')
                 ts = ts.replace(tzinfo = timezone.utc)
                 sn = self.record.time_map.get_seqnum(ts, sn + 5120) or sn
                 t = sn - sn0
 
-                (alert_id, event, severity, state, label) = _parse_info(line)
-                if alert_id and label:
-                    num = alert_num.setdefault(alert_id, len(alert_num) + 1)
-                    oldstate = alert_last.get(alert_id, None)
-                    newstate = (severity, state, label)
-                    alert_first.setdefault(alert_id, newstate)
-                    alert_last[alert_id] = newstate
-                    announce = announce_t.get(alert_id, t)
-                    end = end_t.get(alert_id, t)
-                    if (oldstate and oldstate != newstate
-                            and announce <= t <= end):
-                        _put_annot(anns, t, num, b';', severity, state, label)
+                num = alert_num.setdefault(alert_id, len(alert_num) + 1)
+
+                oldstate = alert_last.get(alert_id, None)
+                newstate = (severity, state, label)
+                alert_first.setdefault(alert_id, newstate)
+                alert_last[alert_id] = newstate
+
+                announce = announce_t.get(alert_id, t)
+                end = end_t.get(alert_id, t)
+                if t <= announce:
+                    alert_pre_announce[alert_id] = newstate
+                if t <= end:
+                    alert_pre_end[alert_id] = newstate
+
+                if oldstate and oldstate != newstate and announce < t < end:
+                    _put_annot(anns, t, num, b';', severity, state, label)
 
             for (alert_id, (sn, ts)) in self.alert_onset.items():
                 num = alert_num.get(alert_id)
@@ -191,14 +206,16 @@ class AlertFinalizer:
                 num = alert_num.get(alert_id)
                 if num is None:
                     continue
-                (severity, state, label) = alert_first[alert_id]
+                (severity, state, label) = (alert_pre_announce.get(alert_id)
+                                            or alert_first[alert_id])
                 _put_annot(anns, t, num, b'<', severity, state, label)
 
             for (alert_id, t) in end_t.items():
                 num = alert_num.get(alert_id)
                 if num is None:
                     continue
-                (severity, state, label) = alert_last[alert_id]
+                (severity, state, label) = (alert_pre_end.get(alert_id)
+                                            or alert_last[alert_id])
                 _put_annot(anns, t, num, b'>', severity, state, label)
 
 _info_pattern = re.compile(rb'\(([\w-]+)\)(?:([-+!])|(\d+)([=~])(.*))')
