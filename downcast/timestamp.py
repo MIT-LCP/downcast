@@ -97,16 +97,6 @@ class T(datetime):
             microsecond = microsecond,
             tzinfo = tz)
 
-    def __add__(a, b):
-        return T(datetime.__add__(a, b))
-
-    def __sub__(a, b):
-        d = datetime.__sub__(a, b)
-        if isinstance(d, datetime):
-            return T(d)
-        else:
-            return d
-
     def __str__(self):
         tzoffs = round(self.tzinfo.utcoffset(None).total_seconds() / 60)
         (tzh, tzm) = divmod(abs(tzoffs), 60)
@@ -129,6 +119,26 @@ class T(datetime):
     def strftime_utc(self, fmt):
         """Convert time to UTC and format as a string."""
         return datetime.strftime(self.astimezone(timezone.utc), fmt)
+
+
+if not isinstance(T('1800-01-01 00:00:00.000 +00:00') + timedelta(0), T):
+    # the following are redundant in Python 3.8
+    # also, the above line is a nice sanity check in case Python
+    # decides to break this stuff *again*
+
+    def _add_and_convert(a, b):
+        return T(datetime.__add__(a, b))
+    T.__add__ = _add_and_convert
+    T.__radd__ = _add_and_convert
+
+    def _sub_and_convert(a, b):
+        d = datetime.__sub__(a, b)
+        if isinstance(d, datetime):
+            return T(d)
+        else:
+            return d
+    T.__sub__ = _sub_and_convert
+
 
 def delta_ms(time_a, time_b):
     """Compute the difference between two timestamps in milliseconds."""
