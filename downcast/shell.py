@@ -227,7 +227,7 @@ def _show_results(cur, colinfo, results, setindex, transpose=False):
             sys.stdout.write(_color0 + '\n')
 
 def _run_query(conn, query, params):
-    if query is '':
+    if query == '':
         return
     if re.match(r'@transpose\s', query):
         transpose = True
@@ -294,7 +294,7 @@ def main():
             try:
                 line = input(opts.server + '> ')
                 query = line
-                while line is not '' and not query.endswith(';'):
+                while line != '' and not query.endswith(';'):
                     line = input(' ' * len(opts.server) + '> ')
                     query += '\n' + line
                 params = []

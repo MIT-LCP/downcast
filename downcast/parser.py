@@ -258,12 +258,10 @@ def _bytes(value):
         raise TypeError()
 
 def _boolean(value):
-    if isinstance(value, bool):
-        return value
-    elif value is 1:
-        return True
-    elif value is 0:
-        return False
+    # (value | 1) should raise a TypeError if value is a float or
+    # other non-integer type
+    if (value | 1) == 1:
+        return bool(value)
     else:
         raise TypeError()
 
