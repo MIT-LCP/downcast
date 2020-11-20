@@ -38,7 +38,19 @@ class T(datetime):
                           '(\d+):(\d+):(\d+)(\.\d+)\s*' +
                           '([-+])(\d+):(\d+)\Z', re.ASCII)
 
-    def __new__(cls, val, _tz = None):
+    def __new__(cls, val, *args):
+        # The constructor may be called in various ways:
+        #  - T(str), to explicitly convert from a time string
+        #  - T(datetime), to explicitly convert from a datetime
+        #  - T(int, int, int, int, int, int, int, tzinfo),
+        #     used by __add__ and __sub__ in Python 3.8
+        #  - T(bytes, tzinfo), used by pickle.loads
+        # Only the first two (single argument) forms should be used by
+        # applications.
+
+        if args:
+            return datetime.__new__(cls, val, *args)
+
         if isinstance(val, datetime):
             tz = val.tzinfo
             if tz is None:
@@ -53,8 +65,6 @@ class T(datetime):
                 second = val.second,
                 microsecond = val.microsecond,
                 tzinfo = tz)
-        elif isinstance(val, bytes) and isinstance(_tz, timezone):
-            return datetime.__new__(cls, val, _tz)
 
         m = T._pattern.match(val)
         if m is None:
