@@ -58,7 +58,7 @@ class BCPConnection:
     def get_table(self, name):
         """Retrieve a table by name."""
         if name not in self._tables:
-            raise OperationalError('undefined table %s' % q.table)
+            raise OperationalError('undefined table %s' % name)
         return self._tables[name]
 
     def parse(self, statement, params):
