@@ -138,19 +138,6 @@ def _init_extractor(opts):
                               end_time = opts.end)
     ex.add_queue(pmq)
 
-    ex.add_queue(PatientBasicInfoQueue(
-        'patients',
-        start_time = opts.start, end_time = opts.end))
-    ex.add_queue(PatientStringAttributeQueue(
-        'strings',
-        start_time = opts.start, end_time = opts.end))
-    ex.add_queue(PatientDateAttributeQueue(
-        'dates',
-        start_time = opts.start, end_time = opts.end))
-    # ex.add_queue(BedTagQueue(
-    #     'beds',
-    #     start_time = opts.start, end_time = opts.end))
-
     ex.add_queue(WaveSampleQueue(
         'waves',
         start_time = opts.start, end_time = opts.end))
