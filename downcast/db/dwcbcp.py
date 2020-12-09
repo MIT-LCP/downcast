@@ -270,14 +270,14 @@ class DWCBCPConnection(BCPConnection):
         sorted by timestamp, and must not overlap.
         """
 
-        meta_tables = {'Enumeration', 'Numeric', 'Wave'}
-        data_pat = re.compile('\.[0-9]+_[0-9]+\Z')
+        meta_pat = re.compile('\A(?:Enumeration|Numeric|Wave)(?:\.dat)?\Z')
+        data_pat = re.compile('\.(?:dat|[0-9]+_[0-9]+)\Z')
         for f in sorted(os.listdir(dirname)):
             path = os.path.join(dirname, f)
             base = f.split('.')[0]
             table = '_Export.%s_' % base
             fmtpath = os.path.join(dirname, base + '.fmt')
-            if f in meta_tables:
+            if meta_pat.search(f):
                 self.add_data_file(table, path, fmtpath, True)
             elif data_pat.search(f):
                 self.add_data_file(table, path, fmtpath, False)
