@@ -1,0 +1,67 @@
+Downcast
+--------
+
+This repository contains tools for processing and converting data from
+the DWC system into WFDB and other open formats.
+
+
+Requirements
+------------
+
+Python 3.4 or later is required.  A Unix-like platform is required -
+Debian and CentOS have been tested; Mac OS might work as well.  This
+package will not work on Windows.
+
+For processing data in BCP format, the ply package is required.
+
+For processing data directly from SQL Server, the pymssql package is
+required.  (This package is now mostly abandoned and should probably
+be replaced with a different backend.)
+
+
+Quick start
+-----------
+
+If you have access to the demo DWC database, download and unpack these
+files (about 30 GB uncompressed.)  You will then need to create a
+"server.conf" file, which should look like this:
+
+[demo]
+type = bcp
+bcp-path = /home/user/dwc-demo
+
+(where /home/user/dwc-demo is the directory containing "Alert.dat",
+"Alert.fmt", etc.)  See server.conf.example for other examples.
+
+The demo database spans the time period from 1:00 AM EDT on October
+31, 2004, to midnight EST on November 1.  To parse and convert a slice
+of the data (say, from 10:00 to 10:05 AM), first we initialize an
+output directory and set the starting time:
+
+  $ ./downcast.py --init --server demo \
+                  --output-dir /home/user/dwc-test-output \
+                  --start "2004-10-31 10:00:00.000 -05:00"
+
+Then run a batch conversion while specifying the end time:
+
+  $ ./downcast.py --batch --server demo \
+                  --output-dir /home/user/dwc-test-output \
+                  --end "2004-10-31 10:05:00.000 -05:00"
+
+If we wanted to keep going, we could run the same --batch command
+again, increasing the end timestamp each time.  We don't need to
+specify the starting timestamp for --batch, since the "current"
+timestamp is saved automatically.
+
+To "finalize" the output (and forcibly truncate all patient records at
+the specified end time), we use the --terminate option.  This wouldn't
+be done for a real database conversion, but it's useful for a simple
+test:
+
+  $ ./downcast.py --batch --server demo \
+                  --output-dir /home/user/dwc-test-output \
+                  --end "2004-10-31 10:05:00.000 -05:00" \
+                  --terminate
+
+This should result in a bunch of patient records in WFDB format,
+stored in /home/user/dwc-test-output.

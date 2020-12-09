@@ -1,0 +1,20 @@
+# Example server.conf file - edit as needed.
+
+# Read input from a running SQL Server instance
+# (requires password authentication)
+[example-live]
+hostname = 192.168.123.45
+username = somebody
+password = 12341234
+database = Philips.PatientData
+
+# Read input from a single-day BCP data dump
+[example-bcp]
+type = bcp
+bcp-path = /data/dwc/2001-05-01
+
+# Read input from a multi-day BCP data dump
+# (each day should be stored in a separate directory, listed in order)
+[example-bcp-multiple]
+type = bcp
+bcp-path = /data/dwc/2001-05-01:/data/dwc/2001-05-02:/data/dwc/2001-05-03
