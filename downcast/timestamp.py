@@ -30,12 +30,20 @@ class T(datetime):
     objects.  repr and str produce something sensible.
     """
 
-    # Note the unusual format of the timezone which (for some
-    # braindead reason) means we can't use datetime.strptime or
-    # datetime.strftime.  It's especially braindead given that
-    # datetime.__str__ uses a very similar format.
+    # Note that the following pattern recognizes several formats:
+    #
+    #  YYYY-MM-DD HH:MM:SS.SSS +ZZ:ZZ    (MS SQL)
+    #  YYYY-MM-DD HH:MM:SS.SSSSSS+ZZ:ZZ  (datetime.__str__)
+    #  YYYY-MM-DD HH:MM:SS+ZZ:ZZ         (datetime.__str__ if microseconds = 0)
+    #
+    # The first format is what should normally be used, but for some
+    # reason the timestamps in _phi_time_map files are sometimes
+    # written in the latter two formats - this is a bug somewhere in
+    # downcast.output.timemap, but for now we need to support the
+    # existing _phi_time_map files.
+
     _pattern = re.compile('\A(\d+)-(\d+)-(\d+)\s+' +
-                          '(\d+):(\d+):(\d+)(\.\d+)\s*' +
+                          '(\d+):(\d+):(\d+)(\.\d+)?\s*' +
                           '([-+])(\d+):(\d+)\Z', re.ASCII)
 
     def __new__(cls, val, *args):
@@ -71,7 +79,7 @@ class T(datetime):
             raise ValueError('malformed timestamp string %r' % (val,))
 
         second = int(m.group(6))
-        microsecond = round(float(m.group(7)) * 1000000)
+        microsecond = round(float(m.group(7) or 0) * 1000000)
         # datetime doesn't support leap seconds, and DWC probably
         # doesn't support them either, but allow for the possibility
         # here just in case.  If there is a leap second, it is
