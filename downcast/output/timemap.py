@@ -195,6 +195,21 @@ class TimeMap:
         # from the *last* reference timestamp.
         return possible_sn[-1][0]
 
+    def get_time(self, seqnum):
+        """
+        Guess the wall-clock time corresponding to a sequence number.
+
+        If no information is available, this will return None.
+        """
+        best_time = None
+        best_delta = None
+        for (start, end, base, _) in self.entries:
+            delta = max(start - seqnum, seqnum - end)
+            if best_delta is None or delta < best_delta:
+                best_time = base + timedelta(milliseconds = seqnum)
+                best_delta = delta
+        return best_time
+
     def resolve_gaps(self):
         """
         Refine the time map based on all available information.
