@@ -17,6 +17,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import heapq
+import re
+
+_timestamp_pattern = re.compile(b'S?[0-9]+\n')
 
 class ArchiveLogReader:
     """Class for reading log entries from a mostly-sorted input file.
@@ -87,14 +90,14 @@ class ArchiveLogReader:
         sn = ts = 0
         t = (sn, ts)
         for line in fp:
-            try:
+            if _timestamp_pattern.fullmatch(line):
                 if line[0] == 83: # ASCII 'S'
                     sn = int(line[1:])
                     t = (sn, ts)
                 else:
                     ts = int(line)
                     t = (sn, ts)
-            except ValueError:
+            else:
                 yield (sn, ts, line)
                 if not subseq or t < prev_t:
                     fpos = fp.tell() - len(line)
@@ -118,14 +121,14 @@ class ArchiveLogReader:
             fp.seek(fpos)
 
             for line in fp:
-                try:
+                if _timestamp_pattern.fullmatch(line):
                     if line[0] == 83: # ASCII 'S'
                         sn = int(line[1:])
                         p = (sn, ts, fpos)
                     else:
                         ts = int(line)
                         p = (sn, ts, fpos)
-                except ValueError:
+                else:
                     if p < prev_p:
                         # reached end of subsequence
                         break
