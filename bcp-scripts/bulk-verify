@@ -1,0 +1,258 @@
+#!/usr/bin/perl -w
+#
+# bulk-verify - check syntax of DWC-BCP data files
+#
+# Copyright (c) 2018 Laboratory for Computational Physiology
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+use strict;
+use Getopt::Long qw(:config gnu_getopt);
+
+my $HEX = qr/[0-9A-F]/;
+my $UUID = qr/$HEX{8}(?:-$HEX{4}){3}-$HEX{12}/;
+my $HEX_I = qr/[0-9A-F]/i;
+my $UUID_STRING = qr/$HEX_I{8}(?:-$HEX_I{4}){3}-$HEX_I{12}/;
+my $DATE = qr/\d{4,}-\d{2}-\d{2}/;
+my $TIMESTAMP = qr/$DATE \d{2}:\d{2}:\d{2}\.\d+ [-+]\d{2}:\d{2}/;
+my $INTEGER = qr/-?\d+/;
+my $DECIMAL = qr/-?\d*\.\d+/;
+
+my $SAMPLE_INDEX_LIST = qr/\d+(?: \d+)*/;
+my $SAMPLE_RANGE_LIST = qr/\d+ \d+(?: \d+ \d+)*/;
+
+my %PATTERNS = (
+  AdmitState               => qr{\A$INTEGER?\z},
+  AlertId                  => qr{\A$UUID\z},
+  Alias                    => qr{.?}s,
+  AnnounceTime             => qr{\A$TIMESTAMP\z},
+  BasePhysioId             => qr{\A$INTEGER\z},
+  BedLabel                 => qr{.?}s,
+  CalibrationAbsLower      => qr{\A$DECIMAL?\z},
+  CalibrationAbsUpper      => qr{\A$DECIMAL?\z},
+  CalibrationScaledLower   => qr{\A$INTEGER\z},
+  CalibrationScaledUpper   => qr{\A$INTEGER\z},
+  CalibrationType          => qr{\A$INTEGER\z},
+  Category                 => qr{\A$INTEGER?\z},
+  Channel                  => qr{\A$INTEGER\z},
+  ClinicalUnit             => qr{.?}s,
+  Code                     => qr{\A$INTEGER\z},
+  Color                    => qr{\A$INTEGER\z},
+  CompoundValueId          => qr{\A$UUID\z},
+  EcgLeadPlacement         => qr{\A$INTEGER\z},
+  EndTime                  => qr{\A$TIMESTAMP\z},
+  EnumerationId            => qr{\A$INTEGER\z},
+  Gender                   => qr{\A$INTEGER\z},
+  Height                   => qr{\A$DECIMAL?\z},
+  HeightUnit               => qr{\A$INTEGER?\z},
+  HighEdgeFrequency        => qr{\A$DECIMAL?\z},
+  Hostname                 => qr{.}s,
+  Id => {
+    Enumeration            => qr{\A$INTEGER\z},
+    Numeric                => qr{\A$INTEGER\z},
+    Wave                   => qr{\A$INTEGER\z},
+    Patient                => qr{\A$UUID_STRING\z},
+    PatientMapping         => qr{\A$UUID\z},
+  },
+  InvalidSamples           => qr{\A$SAMPLE_RANGE_LIST?\z},
+  IsAlarmingOff            => qr{\A[01]\z},
+  IsAperiodic              => qr{\A[01]\z},
+  IsDerived                => qr{\A[01]\z},
+  IsManual                 => qr{\A[01]\z},
+  IsMapped                 => qr{\A1\z}, # we don't want pre-mapping mappings
+  IsSilenced               => qr{\A[01]\z},
+  IsSlowWave               => qr{\A[01]\z},
+  IsTrendUploaded          => qr{\A[01]\z},
+  Kind                     => qr{\A$INTEGER\z},
+  Label                    => qr{.}s,
+  LowEdgeFrequency         => qr{\A$DECIMAL?\z},
+  LowerLimit               => qr{\A$DECIMAL?\z},
+  MappingId                => qr{\A$UUID\z},
+  MaxValues                => qr{\A$INTEGER\z},
+  Name                     => qr{\A\S+\z},
+  NumericId                => qr{\A$INTEGER\z},
+  OnsetTime                => qr{\A$TIMESTAMP\z},
+  PacedMode                => qr{\A$INTEGER?\z},
+  PacedPulses              => qr{\A$SAMPLE_INDEX_LIST?\z},
+  PatientId                => qr{\A$UUID_STRING\z},
+  PhysioId                 => qr{\A$INTEGER\z},
+  PressureUnit             => qr{\A$INTEGER?\z},
+  ResuscitationStatus      => qr{\A$INTEGER?\z},
+  SamplePeriod             => qr{\A$INTEGER\z},
+  Scale                    => qr{\A$INTEGER\z},
+  ScaleLower               => qr{\A$INTEGER\z},
+  ScaleUpper               => qr{\A$INTEGER\z},
+  SequenceNumber           => qr{\A$INTEGER\z},
+  Severity                 => qr{\A$INTEGER\z},
+  Source                   => qr{\A$INTEGER\z},
+  SubLabel                 => qr{.}s,
+  SubPhysioId              => qr{\A$INTEGER\z},
+  SubtypeId                => qr{\A$INTEGER\z},
+  Tag                      => qr{.}s,
+  TimeStamp                => qr{\A$TIMESTAMP\z},
+  Timestamp                => qr{\A$TIMESTAMP\z},
+  UnavailableSamples       => qr{\A$SAMPLE_RANGE_LIST?\z},
+  UnitCode                 => qr{\A$INTEGER\z},
+  UnitLabel                => qr{.}s,
+  UpperLimit               => qr{\A$DECIMAL?\z},
+  Validity                 => qr{\A$INTEGER\z},
+  Value => {
+    EnumerationValue       => qr{.}s,
+    NumericValue           => qr{\A$DECIMAL?\z},
+    PatientDateAttribute   => qr{\A$DATE \d{2}:\d{2}:\d{2}\z},
+    PatientStringAttribute => qr{.}s,
+  },
+  ValuePhysioId            => qr{\A$INTEGER\z},
+  WaveId                   => qr{\A$INTEGER\z},
+  WaveSamples              => qr{\A(?:..)+\z}s,
+  Weight                   => qr{\A$DECIMAL?\z},
+  WeightUnit               => qr{\A$INTEGER?\z},
+);
+
+my $slistmax = 0;
+
+sub check_sample_list {
+  $slistmax = length($_) if length($_) > $slistmax;
+  my ($x, @n) = split / /;
+  while (@n) {
+    my $y = shift @n;
+    return 0 if $x >= $y;
+    $x = $y;
+  }
+  return 1;
+}
+
+my %CHECKFUNC = (
+  PacedPulses        => \&check_sample_list,
+# UnavailableSamples => \&check_sample_list,
+# InvalidSamples     => \&check_sample_list,
+);
+
+my $exit_status = 0;
+my @ignored_bad_columns;
+
+GetOptions('force-invalid=s' => \@ignored_bad_columns) or die;
+
+foreach my $datafile (@ARGV) {
+  my ($table) = split /\./, $datafile;
+  my $fmtfile = "$table.fmt";
+  my @cols;
+
+  open FMT, $fmtfile or die "can't read $fmtfile: $!";
+  $/ = "\n";
+  my $ver = <FMT>;
+  my $ncols = <FMT>;
+  while (<FMT>) {
+    s/^\s+//;
+    my ($hcol, $type, $plen, $clen, $term, $tcol, $name) = split /\s+/;
+    die "$fmtfile: wrong column number" if $hcol ne (@cols + 1);
+    die "$fmtfile: invalid data type" if $type !~ /^SYB(?:CHAR|BINARY)$/;
+    die "$fmtfile: invalid prefix size" if $plen !~ /^\d+$/;
+    die "$fmtfile: invalid column size" if $clen ne -1;
+    die "$fmtfile: invalid column separator" if $term !~ /^".*"$/;
+    die "$fmtfile: invalid source column" if $tcol !~ /^\d+$/;
+    my $pat = $PATTERNS{$name};
+    my $func = $CHECKFUNC{$name};
+    if (ref $pat eq 'HASH') {
+      $pat = $pat->{$table};
+    }
+    die "$fmtfile: unknown column name" if !defined $pat;
+
+    if ($term eq '"\t"' && $plen == 0) {
+      push @cols, [ undef, "\t", $pat, $func, $name ];
+    }
+    elsif ($term eq '"\n"' && $plen == 0) {
+      push @cols, [ undef, "\n", $pat, $func, $name ];
+    }
+    elsif ($term eq '""' && $plen == 4) {
+      push @cols, [ 4, 'V', $pat, $func, $name ];
+    }
+    else {
+      die "$fmtfile: unknown column specification";
+    }
+  }
+  close FMT;
+  if (@cols != $ncols) {
+    die "$fmtfile: incorrect number of columns";
+  }
+
+  open DATA, $datafile or die "can't read $datafile: $!";
+  my $nrows = 0;
+  my $invalid = 0;
+  my %invalid_cols;
+  while (!eof DATA) {
+    $nrows++;
+    foreach my $c (@cols) {
+      if ($c->[0]) {
+        if ($c->[0] != read DATA, $_, $c->[0]) {
+          print STDERR "$datafile:R$nrows: unexpected EOF (in $c->[3])\n";
+          $invalid = 1;
+          last;
+        }
+        my $n = unpack $c->[1], $_;
+        if ($n != read DATA, $_, $n) {
+          print STDERR "$datafile:R$nrows: unexpected EOF (in $c->[3])\n";
+          $invalid = 1;
+          last;
+        }
+      }
+      else {
+        $/ = $c->[1];
+        $_ = <DATA>;
+        if (!chomp) {
+          print STDERR "$datafile:R$nrows: unexpected EOF (in $c->[3])\n";
+          $invalid = 1;
+          last;
+        }
+      }
+      if ($_ !~ $c->[2] or ($c->[3] and !&{$c->[3]})) {
+        $invalid_cols{$c->[4]}++;
+        if ($invalid_cols{$c->[4]} <= 5) {
+          s/([\\"])/\\$1/g;
+          s{([\000-\037])}{sprintf '\\%03o', ord $1}eg;
+          my $pos = tell DATA;
+          print STDERR "$datafile:R$nrows:\@$pos: invalid $c->[4]\n";
+          print STDERR "  value: \"$_\"\n";
+          print STDERR "  expected: $c->[2]\n";
+        }
+      }
+    }
+  }
+  close DATA;
+
+  foreach my $c (sort keys %invalid_cols) {
+    if (!grep { $_ eq $c } @ignored_bad_columns) {
+      $invalid = 1;
+      $exit_status = 1;
+    }
+  }
+
+  if ($invalid) {
+    print '-' x 32, " $datafile ($nrows)";
+  }
+  else {
+    my ($md5) = (`md5sum $datafile` =~ /^([0-9a-f]{32})/);
+    print "$md5 $datafile $nrows";
+  }
+  foreach my $c (sort keys %invalid_cols) {
+    print "\t(", $invalid_cols{$c}, " $c)";
+  }
+  print "\n";
+}
+
+if ($slistmax == 2048) {
+  print "*** Warning: sample lists may have been truncated\n";
+}
+
+exit ($exit_status);

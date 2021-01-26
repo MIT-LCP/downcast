@@ -1,0 +1,419 @@
+#!/usr/bin/perl -w
+#
+# bulk-extract - extract DWC data from SQL Server
+#
+# Copyright (c) 2018 Laboratory for Computational Physiology
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+# Quick setup for automated extraction:
+#
+# 1. Create a user account in SQL Server.
+#     * Set the authentication type to "SQL Server authentication",
+#       and set a password for the account.
+#     * Under "Server Roles", "public" should be checked.
+#     * Under "User Mapping", check the box next to "Philips.PatientData".
+#     * In the list of database roles associated with this database,
+#       check both "ExternalAccess" and "db_datareader".
+#
+# 2. Create a file freetds.conf which looks like:
+#
+#      [dwclive]
+#      hostname = 12.34.56.78
+#      port = 1433
+#      tds version = 7.0
+#      client charset = UTF-8
+#
+# 3. Create a file server.conf which looks like:
+#
+#      [dwclive]
+#      hostname = 12.34.56.78
+#      username = dwcbulkuser
+#      password = secretpassword
+#      database = Philips.PatientData
+#
+# 4. Run something like this:
+#
+#      bulk-extract -I freetds.conf -C server.conf -S dwclive --sort \
+#        -f "$(date -d yesterday +%Y-%m-%d) 00:00:00 -05:00" \
+#        -t "$(date -d today +%Y-%m-%d) 00:00:00 -05:00"
+#
+#    If running this from a cron job, remember that cron will invoke
+#    the job at a particular *local* time.  So if your system timezone
+#    is America/New_York, and the daily cutoff is 00:00:00 -05:00,
+#    then the cron job should be launched no earlier than 1:00 AM
+#    (which is 01:00:00 -05:00 in winter and 00:00:00 -05:00 in
+#    summer.)
+
+use strict;
+use POSIX qw(mktime);
+use Getopt::Long qw(:config gnu_getopt);
+use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC sleep);
+use Fcntl qw(F_GETFD F_SETFD FD_CLOEXEC);
+
+my %main_tables =
+  (
+   Alert => [qw[TimeStamp SequenceNumber AlertId Source Code Label Severity
+                Kind IsSilenced SubtypeId AnnounceTime OnsetTime EndTime
+                MappingId]],
+   BedTag => [qw[BedLabel Timestamp Tag]],
+   EnumerationValue => [qw[EnumerationId TimeStamp SequenceNumber
+                           CompoundValueId Value MappingId]],
+   NumericValue => [qw[NumericId TimeStamp SequenceNumber IsTrendUploaded
+                       CompoundValueId Value MappingId]],
+   PatientMapping => [qw[Id PatientId Timestamp IsMapped Hostname]],
+   PatientDateAttribute => [qw[PatientId Timestamp Name Value]],
+   PatientStringAttribute => [qw[PatientId Timestamp Name Value]],
+   Patient => [qw[Id Timestamp BedLabel Alias Category Height HeightUnit
+                  Weight WeightUnit PressureUnit PacedMode
+                  ResuscitationStatus AdmitState ClinicalUnit Gender]],
+   WaveSample => [qw[WaveId TimeStamp SequenceNumber WaveSamples
+                     UnavailableSamples InvalidSamples PacedPulses
+                     MappingId]],
+  );
+
+my %meta_tables =
+  (
+   Enumeration => [qw[Id BasePhysioId PhysioId Label ValuePhysioId
+                      IsAperiodic IsManual Validity UnitCode UnitLabel
+                      Color]],
+   Numeric => [qw[Id BasePhysioId PhysioId Label IsAperiodic UnitLabel
+                  Validity LowerLimit UpperLimit IsAlarmingOff SubPhysioId
+                  SubLabel Color IsManual MaxValues Scale]],
+   Wave => [qw[Id BasePhysioId PhysioId Label Channel SamplePeriod
+               IsSlowWave IsDerived Color LowEdgeFrequency HighEdgeFrequency
+               ScaleLower ScaleUpper CalibrationScaledLower
+               CalibrationScaledUpper CalibrationAbsLower CalibrationAbsUpper
+               CalibrationType UnitLabel UnitCode EcgLeadPlacement]],
+  );
+
+my $conffile = 'freetds.conf';
+my $server = $ENV{dwc_server};
+my $username = $ENV{dwc_user};
+my $password = $ENV{dwc_password};
+my $serverconf;
+my $database = 'Philips.PatientData';
+my $start = '';
+my $end = '';
+# FIXME: use different default settings per table
+my $batch_seconds = 600;
+my $max_rate = 50;
+my $sort = 0;
+my $compress = '';
+my $debug = 0;
+
+GetOptions('freetds-conf|I=s' => \$conffile,
+           'server|S=s' => \$server,
+           'server-conf|C=s' => \$serverconf,
+           'user|U=s' => \$username,
+           'password|P=s' => \$password,
+           'database|D=s' => \$database,
+           'start|f=s' => \$start,
+           'end|t=s' => \$end,
+           'batch-seconds=f' => \$batch_seconds,
+           'max-rate=f' => \$max_rate,
+           'sort|s' => \$sort,
+           'compress=s' => \$compress,
+           'debug' => \$debug) or die;
+
+my @tables = @ARGV;
+if (@tables == 0) {
+  @tables = (sort(keys %main_tables), sort(keys %meta_tables));
+}
+
+my $main_tables = 0;
+my ($start_date, $start_hour, $start_minute, $start_second, $start_tz);
+my ($end_date, $end_hour, $end_minute, $end_second, $end_tz);
+foreach my $t (@tables) {
+  if ($main_tables{$t}) {
+    $main_tables = 1;
+  }
+  elsif (!$meta_tables{$t}) {
+    die "unknown table $t";
+  }
+}
+if ($main_tables) {
+  ($start_date, $start_hour, $start_minute, $start_second, $start_tz)
+    = ($start =~ /^(\d+-\d+-\d+)\s+(\d+):(\d+):(\d+\.?\d*)\s+([-+]\d+:\d+)$/);
+  if (!defined $start_date) {
+    die "invalid/unspecified start time";
+  }
+  ($end_date, $end_hour, $end_minute, $end_second, $end_tz)
+    = ($end =~ /^(\d+-\d+-\d+)\s+(\d+):(\d+):(\d+\.?\d*)\s+([-+]\d+:\d+)$/);
+  if (!defined $end_date) {
+    die "invalid/unspecified end time";
+  }
+  if ($start_tz ne $end_tz) {
+    die "start/end timezones don't match";
+  }
+}
+
+if (! -r -f $conffile) {
+  die "can't find $conffile";
+}
+
+if (!defined $server) {
+  die "--server not specified";
+}
+
+if (defined $serverconf) {
+  open SERVERCONF, '<', $serverconf or die "can't read $serverconf: $!";
+  my $sname = '';
+  while (<SERVERCONF>) {
+    chomp;
+    if (/^\[(.*?)\]/) {
+      $sname = $1;
+    }
+    elsif ($sname eq $server) {
+      if (/^username\s*=\s*(.*)/) {
+        $username = $1;
+      }
+      elsif (/^password\s*=\s*(.*)/) {
+        $password = $1;
+      }
+      elsif (/^database\s*=\s*(.*)/) {
+        $database = $1;
+      }
+    }
+  }
+  close SERVERCONF;
+
+  if (!defined $username) {
+    die "username not specified for $server in $serverconf";
+  }
+  if (!defined $password) {
+    die "password not specified for $server in $serverconf";
+  }
+}
+else {
+  if (!defined $username) {
+    die "--user not specified";
+  }
+  if (!defined $password) {
+    print STDERR "Password for $username on $server: ";
+    system 'stty', '-echo';
+    chomp ($password = <STDIN>);
+    system 'stty', 'echo';
+    print STDERR "\n";
+  }
+}
+
+my $suffix = '';
+if ("$compress " =~ /^\S*gzip\s/) { $suffix = '.gz'; }
+elsif ("$compress " =~ /^\S*bzip2\s/) { $suffix = '.bz2'; }
+elsif ("$compress " =~ /^\S*lzip\s/) { $suffix = '.lz'; }
+elsif ("$compress " =~ /^\S*xz\s/) { $suffix = '.xz'; }
+elsif ("$compress " =~ /^\S*lzma\s/) { $suffix = '.lzma'; }
+elsif ("$compress " =~ /^\S*lzop\s/) { $suffix = '.lzo'; }
+elsif ("$compress " =~ /^\S*compress\s/) { $suffix = '.Z'; }
+elsif ($compress ne '') { $suffix = '.compressed'; }
+
+################################################################
+
+my $clocktime = (clock_gettime(CLOCK_MONOTONIC)
+                 - ($batch_seconds / $max_rate));
+
+foreach my $table (@tables) {
+  printf STDOUT "%-24s ...", $table;
+  STDOUT->autoflush(1);
+
+  # Write format file
+
+  my $fmtfile = "$table.fmt";
+  open FMT, '>', $fmtfile or die "can't write $fmtfile: $!";
+  my $cols = $main_tables{$table} // $meta_tables{$table};
+
+  print FMT "0.0\n";              # version number
+  print FMT scalar(@$cols), "\n"; # number of columns
+  for (my $i = 1; $i <= @$cols; $i++) {
+    my $c = $cols->[$i - 1];
+    print FMT "$i ";
+    if ($c eq 'WaveSamples') {
+      print FMT 'SYBBINARY 4 -1 ""';
+    }
+    else {
+      print FMT 'SYBCHAR 0';
+      if ($i == @$cols) {
+        print FMT ' -1 "\n"';
+      }
+      else {
+        print FMT ' -1 "\t"';
+      }
+    }
+    print FMT qq( $i $c ""\n);
+  }
+  close FMT or die "can't write $fmtfile: $!";
+
+  # Generate name for output file
+
+  my $datafile = $table;
+  if ($main_tables{$table}) {
+    $datafile .= '.' . ($start_date =~ s/-//gr);
+    if ($start_hour > 0 or $start_minute > 0 or $start_second > 0
+        or $end_hour > 0 or $end_minute > 0 or $end_second > 0) {
+      $datafile .= sprintf '%02d%02d', $start_hour, $start_minute;
+    }
+    if ($start_second > 0 or $end_second > 0) {
+      $datafile .= sprintf '%06.3f', $start_second;
+    }
+    $datafile .= '_' . ($end_date =~ s/-//gr);
+    if ($start_hour > 0 or $start_minute > 0 or $start_second > 0
+        or $end_hour > 0 or $end_minute > 0 or $end_second > 0) {
+      $datafile .= sprintf '%02d%02d', $end_hour, $end_minute;
+    }
+    if ($start_second > 0 or $end_second > 0) {
+      $datafile .= sprintf '%06.3f', $end_second;
+    }
+  }
+  $datafile .= $suffix;
+
+  # Concatenate and write data to output file
+
+  open DATA, '>', $datafile or die "can't write $datafile: $!";
+
+  my $pid = open OUTPIPE, '|-';
+  if (!defined $pid) {
+    die "can't create child process: $!";
+  }
+  if ($pid == 0) {
+    if ($compress) {
+      open STDOUT, '>&', \*DATA;
+      exec "$compress -c";
+      die "can't execute $compress: $!";
+    }
+    else {
+      local $/ = \65536;
+      while (<STDIN>) {
+        print DATA $_;
+      }
+      close DATA or die "can't write $datafile: $!";
+      exit 0;
+    }
+  }
+  close DATA;
+
+  my $flags = fcntl OUTPIPE, F_GETFD, 0;
+  fcntl OUTPIPE, F_SETFD, ($flags & ~FD_CLOEXEC);
+  my $outfd = fileno OUTPIPE;
+
+  $ENV{LC_ALL} = 'C';
+
+  my ($date, $hour, $minute, $second, $tz)
+    = ($start_date, $start_hour, $start_minute, $start_second, $start_tz);
+
+  my $total_rows = 0;
+
+  while (1) {
+    my $where = '';
+    my $order = '';
+    my $qstart = '';
+    my $qend = '';
+    if ($main_tables{$table}) {
+      $qstart = sprintf('%s %02d:%02d:%06.3f %s',
+                        $date, $hour, $minute, $second, $tz);
+      my $qlim = sprintf('%s %02d:%02d:%06.3f %s',
+                         $end_date, $end_hour, $end_minute, $end_second, $tz);
+      last if ($qstart ge $qlim);
+
+      $second += $batch_seconds;
+      if ($second >= 60) {
+        $minute += int($second / 60);
+        $second -= 60 * int($second / 60);
+      }
+      if ($minute >= 60) {
+        $hour += int($minute / 60);
+        $minute -= 60 * int($minute / 60);
+      }
+      while ($hour >= 24) {
+        $hour -= 24;
+        my ($y,$m,$d) = split /-/, $date;
+        my $t = mktime(0, 0, 12, $d, $m - 1, $y - 1900);
+        my @sd = localtime($t + 86400);
+        $date = sprintf '%04d-%02d-%02d',
+          ($sd[5] + 1900), ($sd[4] + 1), $sd[3];
+      }
+
+      $qend = sprintf('%s %02d:%02d:%06.3f %s',
+                      $date, $hour, $minute, $second, $tz);
+      $qend = $qlim if $qend gt $qlim;
+      $where = " where TimeStamp >= '$qstart' and TimeStamp < '$qend'";
+      if ($sort) {
+        $order = " order by TimeStamp";
+      }
+    }
+    else {
+      $order = " order by Id";
+    }
+
+    my $sleep_until = $clocktime + ($batch_seconds / $max_rate);
+    $clocktime = clock_gettime(CLOCK_MONOTONIC);
+    while ($clocktime < $sleep_until) {
+      sleep($sleep_until - $clocktime);
+      $clocktime = clock_gettime(CLOCK_MONOTONIC);
+    }
+
+    my $query = 'select ' . join ',', @$cols;
+    $query .= ' from _Export.' . $table . '_';
+    $query .= $where . $order;
+
+    my $command = ("freebcp \Q$query\E queryout /dev/fd/$outfd"
+                   . " -I \Q$conffile\E -f \Q$fmtfile\E"
+                   . " -S \Q$server\E -D \Q$database\E"
+                   . " -O 'set textsize 2147483647'"
+                   . " -U \Q$username\E -P -");
+
+    my @command = ('freebcp', $query, 'queryout', "/dev/fd/$outfd",
+                   '-I', $conffile, '-f', $fmtfile,
+                   '-S', $server, '-D', $database,
+                   '-O', 'set textsize 2147483647',
+                   '-U', $username, '-P', '-');
+    if ($debug) {
+      print STDERR "'$_' " foreach @command;
+      print STDERR "\n";
+    }
+    my $pid = open INFO, '-|';
+    if (!defined $pid) {
+      die "can't create child process: $!";
+    }
+    if ($pid == 0) {
+      open STDERR, '>&', \*STDOUT;
+      open PASS, '|-', @command;
+      print PASS $password;
+      close PASS;
+      exit ($? == 0 ? 0 : 1);
+    }
+    while (<INFO>) {
+      if (/^(\d+) rows copied\./) {
+        $total_rows += $1;
+      }
+      if ($debug) {
+        print STDERR $_;
+      }
+    }
+    close INFO;
+    die "extraction of $table failed" if $?;
+
+    printf STDOUT "\r%-24s %s (%d, %.1f MB)",
+      $table, $qend, $total_rows, (-s $datafile) / 1048576;
+
+    last if $where eq '';
+  }
+
+  close OUTPIPE;
+  die "extraction of $table failed" if $?;
+
+  chmod 0444 & ~umask, $datafile;
+
+  print STDOUT "\n";
+}
