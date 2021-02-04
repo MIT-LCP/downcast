@@ -112,7 +112,7 @@ class T(datetime):
             f = '%03d' % (self.microsecond // 1000)
         else:
             f = '%06d' % self.microsecond
-        return ('%d-%02d-%02d %02d:%02d:%02d.%s %s%02d:%02d'
+        return ('%04d-%02d-%02d %02d:%02d:%02d.%s %s%02d:%02d'
                 % (self.year, self.month, self.day,
                    self.hour, self.minute, self.second, f,
                    ('-' if tzoffs < 0 else '+'), tzh, tzm))
