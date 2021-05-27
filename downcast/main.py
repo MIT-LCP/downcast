@@ -83,6 +83,8 @@ def _parse_cmdline(args):
                    help = 'begin collecting data at the given time')
     g.add_argument('--end', metavar = 'TIME', type = _parse_timestamp,
                    help = 'collect data up to the given time')
+    g.add_argument('--partial', action = 'store_true',
+                   help = 'include partial records at start time')
     g.add_argument('--terminate', action = 'store_true',
                    help = 'handle final data after permanent shutdown')
 
@@ -181,6 +183,12 @@ def _main_loop(opts):
     if opts.init:
         # In --init mode, simply create the extractor and write the
         # initial queue state files.
+        if not opts.partial:
+            os.makedirs(opts.output_dir, exist_ok = True)
+            horizon_file = os.path.join(opts.output_dir, '%horizon')
+            with open(horizon_file, 'w') as hf:
+                hf.write(str(opts.start) + '\n')
+
         extractor = _init_extractor(opts)
         extractor.flush()
         return
