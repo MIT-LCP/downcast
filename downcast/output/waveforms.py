@@ -53,6 +53,11 @@ class WaveSampleHandler:
             # continue processing
             return
 
+        # Dump original message to BCP file if desired
+        if record.dump(msg):
+            source.ack_message(chn, msg, self)
+            return
+
         # Add event to the time map
         record.set_time(msg.sequence_number, msg.timestamp)
 

@@ -16,13 +16,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import datetime
 import os
 import sys
 import re
 import json
 
-from ..timestamp import T, delta_ms
+from ..timestamp import T, delta_ms, very_old_timestamp
 from ..util import fdatasync
+from ..messages import bcp_format_message
 from .files import ArchiveLogFile, ArchiveBinaryFile
 from .timemap import TimeMap
 from .process import WorkerProcess
@@ -48,6 +50,15 @@ class Archive:
         self.split_interval = 60 * 60 * 1000 # ~ one hour
         self.deterministic_output = deterministic_output
         self.finalization_processes = []
+
+        horizon_file = os.path.join(base_dir, '%horizon')
+        try:
+            with open(horizon_file) as hf:
+                horizon_time = T(hf.read().strip())
+        except FileNotFoundError:
+            horizon_time = very_old_timestamp
+        self.dump_records_before = horizon_time + datetime.timedelta(
+            milliseconds = self.split_interval)
 
         pat = re.compile('\A([A-Za-z0-9-]+)_([0-9a-f-]+)_([-0-9]+)\Z',
                          re.ASCII)
@@ -157,6 +168,8 @@ class Archive:
                                 create = True)
             self.records[servername, record_id] = rec
             rec.set_end_time(timestamp)
+            if timestamp < self.dump_records_before:
+                rec.set_dump_mode()
 
         return rec
 
@@ -214,6 +227,7 @@ class ArchiveRecord:
         self._base_seqnum = self.get_int_property(['base_sequence_number'])
         self._end_time = self.get_timestamp_property(['end_time'])
         self.modified = False
+        self.dump_messages = self.get_int_property(['dump'])
 
     def seqnum0(self):
         return self._base_seqnum
@@ -228,6 +242,10 @@ class ArchiveRecord:
     def set_end_time(self, time):
         self._end_time = time
         self.modified = True
+
+    def set_dump_mode(self):
+        self.set_property(['dump'], 1)
+        self.dump_messages = 1
 
     def finalized(self):
         return (self.get_int_property(['finalized']) == 1)
@@ -277,6 +295,15 @@ class ArchiveRecord:
             fdatasync(d)
         finally:
             os.close(d)
+
+    def dump(self, message):
+        if not self.dump_messages:
+            return False
+
+        datafilename = '_phi_' + type(message).__name__
+        logfile = self.open_log_file(datafilename)
+        logfile.append_raw(bcp_format_message(message))
+        return True
 
     def _read_state_file(self, name):
         fname = os.path.join(self.path, name)

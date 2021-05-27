@@ -49,6 +49,11 @@ class EnumerationValueHandler:
             # continue processing
             return
 
+        # Dump original message to BCP file if desired
+        if record.dump(msg):
+            source.ack_message(chn, msg, self)
+            return
+
         # Open or create a log file
         logfile = record.open_log_file('_phi_enums')
 

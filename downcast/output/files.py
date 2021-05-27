@@ -59,6 +59,10 @@ class ArchiveLogFile:
         self.fp.write(msg.encode('UTF-8'))
         self.fp.write(b'\n')
 
+    def append_raw(self, msg):
+        """Write a raw binary message to the end of the file."""
+        self.fp.write(msg)
+
     def flush(self, fsync = True):
         """Ensure that previous messages are saved to disk."""
         self.fp.flush()
