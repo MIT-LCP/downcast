@@ -315,7 +315,7 @@ class SegmentHeader:
 
         text = []
         if self.min_version:
-            text.append('#wfdb %s\n' % version_to_str(self.min_version))
+            text.append('#wfdb %s\r\n' % version_to_str(self.min_version))
         text.append('%s %d %.16g' % (recname, len(self.signals), self.ffreq))
         if self.cfreq != self.ffreq or self.basecount != 0:
             text.append('/%.16g' % (self.cfreq,))
@@ -323,7 +323,7 @@ class SegmentHeader:
                 text.append('(%.16g)' % (self.basecount,))
         if self.nframes is not None:
             text.append(' %d' % (self.nframes,))
-        text.append('\n')
+        text.append('\r\n')
 
         for sig in self.signals:
             text.append('%s %d' % (sig.fname, sig.fmt))
@@ -338,11 +338,11 @@ class SegmentHeader:
                 text.append('(%d)' % (sig.baseline,))
             if sig.units is not None:
                 text.append('/%s' % (sig.units,))
-            text.append(' %d %d %d %d %d %s\n'
+            text.append(' %d %d %d %d %d %s\r\n'
                      % (sig.adcres, sig.adczero, sig.initval,
                         sig.cksum, sig.bsize, sig.desc))
         for info in self.info:
-            text.append('#%s\n' % (info,))
+            text.append('#%s\r\n' % (info,))
 
         text = ''.join(text)
         with open(path, 'wt', encoding = 'UTF-8') as hf:
@@ -500,7 +500,7 @@ def join_segments(record_header, segment_headers, layout_suffix = '_layout',
 
     with open(record_header, 'wt', encoding = 'UTF-8') as hf:
         if min_version:
-            hf.write('#wfdb %s\n' % version_to_str(min_version))
+            hf.write('#wfdb %s\r\n' % version_to_str(min_version))
         hf.write('%s/%d' % (recname, len(segments)))
         hf.write(' %d' % len(layout.signals))
         hf.write(' %.16g' % ffreq)
@@ -508,9 +508,9 @@ def join_segments(record_header, segment_headers, layout_suffix = '_layout',
             hf.write('/%.16g' % cfreq)
             if basecount != 0:
                 hf.write('(%.16g)' % basecount)
-        hf.write(' %d\n' % end)
+        hf.write(' %d\r\n' % end)
         for (name, length) in segments:
-            hf.write('%s %d\n' % (name, length))
+            hf.write('%s %d\r\n' % (name, length))
 
         if fsync:
             hf.flush()
