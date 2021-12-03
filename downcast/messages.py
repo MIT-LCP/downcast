@@ -18,6 +18,7 @@
 
 from collections import namedtuple
 import struct
+import uuid
 
 ################################################################
 
@@ -314,13 +315,6 @@ PatientStringAttributeMessage = namedtuple('PatientStringAttributeMessage', (
 
 ################################################################
 
-_bcp_special_values = {
-    True: b'1',
-    False: b'0',
-    '': b'\0',
-    None: b''
-}
-
 def bcp_format_message(message):
     """Convert a message to BCP format.
 
@@ -346,10 +340,20 @@ def bcp_format_message(message):
         if field == 'wave_samples':
             ftext = struct.pack('<I', len(value)) + value
         else:
-            try:
-                ftext = _bcp_special_values[value]
-            except KeyError:
-                ftext = str(value).encode()
+            if value is None:
+                # Null stored as empty field
+                ftext = b''
+            elif isinstance(value, bool):
+                # Booleans stored as '0' or '1'
+                ftext = str(int(value)).encode()
+            elif isinstance(value, uuid.UUID):
+                # UUIDs stored as uppercase
+                ftext = str(value).upper().encode()
+            else:
+                # Other types (str, int, Decimal, T) use the default
+                # Python string representation, except that empty
+                # strings are stored as b'\0' to distinguish from null
+                ftext = str(value).encode() or b'\0'
             ftext += b'\t'
         text.append(ftext)
     if field != 'wave_samples':
