@@ -47,18 +47,18 @@ WaveSampleMessage = namedtuple('WaveSampleMessage', (
     'wave_samples',
 
     # String describing the intervals within 'wave_samples' that are
+    # considered "unavailable".  Should be a list of ASCII decimal
+    # numbers separated by spaces; each pair of numbers indicates the
+    # start and end of an "unavailable" interval.
+    'unavailable_samples',
+
+    # String describing the intervals within 'wave_samples' that are
     # considered "invalid".  Should be a list of ASCII decimal numbers
     # separated by spaces; each pair of numbers indicates the start
     # and end of an "invalid" interval.  Indices start at zero and the
     # range is inclusive (e.g. "0 9" would indicate the first ten
     # samples.)
     'invalid_samples',
-
-    # String describing the intervals within 'wave_samples' that are
-    # considered "unavailable".  Should be a list of ASCII decimal
-    # numbers separated by spaces; each pair of numbers indicates the
-    # start and end of an "unavailable" interval.
-    'unavailable_samples',
 
     # String (list of ASCII decimal numbers separated by spaces)
     # giving the relative sample numbers at which pacemaker pulses
