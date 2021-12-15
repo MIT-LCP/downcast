@@ -284,8 +284,8 @@ class WaveSampleParser(MappingIDMessageParser):
             timestamp           = cols('TimeStamp',          _timestamp, True),
             sequence_number     = cols('SequenceNumber',     _integer, True),
             wave_samples        = cols('WaveSamples',        _bytes, True),
-            invalid_samples     = cols('InvalidSamples',     _string),
             unavailable_samples = cols('UnavailableSamples', _string),
+            invalid_samples     = cols('InvalidSamples',     _string),
             paced_pulses        = cols('PacedPulses',        _string),
             mapping_id          = cols('MappingId',          _uuid, True));
 
@@ -304,8 +304,8 @@ class DummyWaveSampleParser(MappingIDMessageParser):
             timestamp           = cols('TimeStamp',          _timestamp, True),
             sequence_number     = cols('SequenceNumber',     _integer, True),
             wave_samples        = b'\0' * (wsl or 0),
-            invalid_samples     = cols('InvalidSamples',     _string),
             unavailable_samples = cols('UnavailableSamples', _string),
+            invalid_samples     = cols('InvalidSamples',     _string),
             paced_pulses        = cols('PacedPulses',        _string),
             mapping_id          = cols('MappingId',          _uuid, True));
 
