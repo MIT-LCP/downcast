@@ -25,6 +25,7 @@ from ..query import SimpleQueryParser
 from ..exceptions import (Error, OperationalError,
                           DataSyntaxError, ProgrammingError)
 from .cursor import BCPCursor
+from .util import open_copy
 
 class BCPConnection:
     """
@@ -314,6 +315,7 @@ class BCPTable:
                     row = it._fetch_next()
 
             newfile = BCPTableFile(path = data_file,
+                                   fileobj = open_copy(f, 'rb'),
                                    location = location,
                                    fsize = fsize,
                                    indices = indices)
@@ -348,18 +350,26 @@ class BCPTable:
 
     def clear(self):
         """Remove all imported data."""
+        oldfiles = self._files
         self._files = []
+        for f in oldfiles:
+            f.close()
 
     def iterator(self):
         """Create an iterator for reading the table."""
         return BCPTableIterator(self)
 
 class BCPTableFile:
-    def __init__(self, path, location, fsize, indices):
+    def __init__(self, path, fileobj, location, fsize, indices):
         self.path = path
+        self.fileobj = fileobj
         self.location = location
         self.fsize = fsize
         self.indices = indices
+
+    def close(self):
+        if self.fileobj:
+            self.fileobj.close()
 
 class BCPTableIterator:
     def __init__(self, table, filename = None):
@@ -391,18 +401,16 @@ class BCPTableIterator:
 
         # Open the given file (if specified), or else open all data
         # files for this table
-        if filename is None:
-            fnl = [f.path for f in table._files]
-        else:
-            fnl = [filename]
-        self._infiles = []
-        for fn in fnl:
-            try:
-                f = open(fn, 'rb')
-                self._infiles.append(f)
-            except Exception as e:
-                self.close()
-                raise OperationalError('cannot open %s: %s' % (fn, e))
+        try:
+            if filename is None:
+                self._infiles = []
+                for tf in table._files:
+                    self._infiles.append(open_copy(tf.fileobj, 'rb'))
+            else:
+                self._infiles = [open(filename, 'rb')]
+        except OSError as e:
+            self.close()
+            raise OperationalError('cannot open data file: %s' % (fn, e))
         self._seek_start()
 
     def __enter__(self):
