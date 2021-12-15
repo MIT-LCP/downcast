@@ -261,8 +261,8 @@ class BCPTable:
             else:
                 location = row[self._order_column]
                 if self._files:
-                    (oldfile, oldloc, _, _) = self._files[-1]
-                    if location <= oldloc:
+                    oldfile = self._files[-1]
+                    if location <= oldfile.location:
                         raise OperationalError(
                             'files out of order (%s, %s)'
                             % (oldfile, data_file))
@@ -302,18 +302,22 @@ class BCPTable:
                             raise OperationalError(
                                 'duplicate %s in %s at byte %s and %s'
                                 % (self._col_name[i], data_file, k, offs))
-                        for (oldfile, _, _, oldind) in self._files:
-                            if v in oldind[i]:
+                        for oldfile in self._files:
+                            if v in oldfile.indices[i]:
                                 raise OperationalError(
                                     ('duplicate %s in %s (byte %s)'
                                      + ' and %s (byte %s)')
                                     % (self._col_name[i],
-                                       oldfile, oldind[i][v],
+                                       oldfile.path, oldfile.indices[i][v],
                                        data_file, offs))
                     offs = it._input_offset()
                     row = it._fetch_next()
 
-            self._files.append((data_file, location, fsize, indices))
+            newfile = BCPTableFile(path = data_file,
+                                   location = location,
+                                   fsize = fsize,
+                                   indices = indices)
+            self._files.append(newfile)
 
     def n_columns(self):
         """Get the number of columns in the table."""
@@ -350,6 +354,13 @@ class BCPTable:
         """Create an iterator for reading the table."""
         return BCPTableIterator(self)
 
+class BCPTableFile:
+    def __init__(self, path, location, fsize, indices):
+        self.path = path
+        self.location = location
+        self.fsize = fsize
+        self.indices = indices
+
 class BCPTableIterator:
     def __init__(self, table, filename = None):
         self._table = table
@@ -381,7 +392,7 @@ class BCPTableIterator:
         # Open the given file (if specified), or else open all data
         # files for this table
         if filename is None:
-            fnl = [f[0] for f in table._files]
+            fnl = [f.path for f in table._files]
         else:
             fnl = [filename]
         self._infiles = []
@@ -468,7 +479,7 @@ class BCPTableIterator:
     def _seek_location(self, target):
         # Find the file that contains the given location
         tbl = self._table
-        fstart = [f[1] for f in tbl._files]
+        fstart = [f.location for f in tbl._files]
         filenum = bisect.bisect_right(fstart, target) - 1
         if filenum < 0:
             self._seek_start()
@@ -477,7 +488,7 @@ class BCPTableIterator:
         # Search within this file for the first row >= target
         try:
             start = 0
-            end = tbl._files[filenum][2]
+            end = tbl._files[filenum].fsize
             # loop invariants:
             #  - start and end are row boundaries
             #  - every row < start has location < target
@@ -515,8 +526,7 @@ class BCPTableIterator:
     def _seek_indexed(self, column_number, target):
         try:
             for (filenum, f) in enumerate(self._table._files):
-                indices = f[3]
-                offs = indices[column_number].get(target, None)
+                offs = f.indices[column_number].get(target, None)
                 if offs is not None:
                     self._set_input_pos(filenum, offs)
                     self._next_row = self._fetch_next()
