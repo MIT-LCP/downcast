@@ -24,7 +24,9 @@ import json
 
 from ..timestamp import T, delta_ms, very_old_timestamp
 from ..util import fdatasync
-from ..messages import bcp_format_message
+from ..messages import (AlertMessage, EnumerationValueMessage,
+                        NumericValueMessage, WaveSampleMessage,
+                        bcp_format_description, bcp_format_message)
 from .files import ArchiveLogFile, ArchiveBinaryFile
 from .timemap import TimeMap
 from .process import WorkerProcess
@@ -55,6 +57,23 @@ class Archive:
         try:
             with open(horizon_file) as hf:
                 horizon_time = T(hf.read().strip())
+
+            # Store the formats used for message dump files in the
+            # output directory.  These formats must not change from
+            # one patient/message to another.
+            for message_type in (AlertMessage, EnumerationValueMessage,
+                                 NumericValueMessage, WaveSampleMessage):
+                fmt = bcp_format_description(message_type)
+                fname = os.path.join(base_dir, message_type.__name__ + '.fmt')
+                try:
+                    with open(fname) as oldff:
+                        oldfmt = oldff.read()
+                    if oldfmt.lower() != fmt.lower():
+                        raise ValueError('mismatched message dump formats')
+                except FileNotFoundError:
+                    with open(fname, 'x') as ff:
+                        ff.write(fmt)
+
         except FileNotFoundError:
             horizon_time = very_old_timestamp
         self.dump_records_before = horizon_time + datetime.timedelta(
