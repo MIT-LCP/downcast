@@ -78,6 +78,7 @@ def _parse_timestamp(arg):
 
 def main():
     p = argparse.ArgumentParser()
+    p.add_argument('-t', '--table', metavar = 'TABLE')
     p.add_argument('-f', '--format-file',
                    metavar = 'TABLE.fmt', required = True)
     p.add_argument('-o', '--output-file',
@@ -87,7 +88,10 @@ def main():
     p.add_argument('input_files', metavar = 'INPUT.dat', nargs = '+')
     opts = p.parse_args()
 
-    table_abbr, _ = os.path.splitext(os.path.basename(opts.format_file))
+    table_abbr = opts.table
+    if table_abbr is None:
+        table_abbr, _ = os.path.splitext(os.path.basename(opts.format_file))
+
     input_files = [(f, opts.format_file) for f in opts.input_files]
 
     output_table_abbr, _ = os.path.splitext(os.path.basename(opts.output_file))
