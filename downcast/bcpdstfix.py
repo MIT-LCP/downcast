@@ -343,7 +343,7 @@ def main():
     p.add_argument('-z', '--timezone',
                    metavar = 'ZONE', required = True)
     p.add_argument('-m', '--mapping-file',
-                   metavar = 'PatientMapping.dat', nargs = '+')
+                   metavar = 'PatientMapping.dat', action = 'append')
     p.add_argument('-o', '--output-file',
                    metavar = 'OUTPUT.dat', required = True)
     p.add_argument('input_file', metavar = 'INPUT.dat')
