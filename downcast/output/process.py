@@ -24,9 +24,6 @@ from multiprocessing import Process
 from ..util import setproctitle
 
 class WorkerProcess(Process):
-    def __init__(self, name = None, **kwargs):
-        Process.__init__(self, name = name, **kwargs)
-
     def run(self):
         name = self.name
         if name is not None:
