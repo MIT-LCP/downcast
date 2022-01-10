@@ -24,28 +24,10 @@ from multiprocessing import Process
 from ..util import setproctitle
 
 class WorkerProcess(Process):
-    def __init__(self, name = None, keep_files = None, **kwargs):
+    def __init__(self, name = None, **kwargs):
         Process.__init__(self, name = name, **kwargs)
-        if keep_files is None:
-            keep_files = [sys.stdin, sys.stdout, sys.stderr]
-        self.keep_fds = {x.fileno() for x in keep_files}
 
     def run(self):
-        # Close all files except those listed in keep_files
-        fds = []
-        for name in os.listdir('/dev/fd'):
-            try:
-                fds.append(int(name))
-            except ValueError:
-                pass
-
-        for fd in fds:
-            if fd not in self.keep_fds:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
-
         name = self.name
         if name is not None:
             setproctitle('downcast:%s' % (name,))
