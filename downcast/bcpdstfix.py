@@ -127,12 +127,11 @@ def read_mapping_timestamps(mapping_files, out_timezone):
 
     for data_file in mapping_files:
         table_abbr, _ = os.path.splitext(os.path.basename(data_file))
-        table = '_Export.%s_' % table_abbr
         format_file = os.path.join(os.path.dirname(data_file),
                                    table_abbr + '.fmt')
 
         db = dwcbcp.DWCBCPConnection([])
-        db.add_data_file(table, data_file, format_file)
+        db.add_data_file('_Export.PatientMapping_', data_file, format_file)
         cursor = db.cursor()
         parser = PatientMappingParser(limit = None, dialect = 'sqlite',
                                       paramstyle = dwcbcp.paramstyle)
