@@ -21,7 +21,11 @@ import heapq
 import os
 
 from .db import dwcbcp
-from .messages import bcp_format_description, bcp_format_message
+from .messages import (AlertMessage, BedTagMessage, EnumerationValueMessage,
+                       NumericValueMessage, PatientBasicInfoMessage,
+                       PatientDateAttributeMessage, PatientMappingMessage,
+                       PatientStringAttributeMessage, WaveSampleMessage,
+                       bcp_format_description, bcp_format_message)
 from .parser import (AlertParser, BedTagParser, EnumerationValueParser,
                      NumericValueParser, PatientBasicInfoParser,
                      PatientDateAttributeParser, PatientMappingParser,
@@ -30,18 +34,27 @@ from .timestamp import T
 
 def merge_files(table_abbr, input_files, output_data_file,
                 output_format_file = None, start = None, end = None):
-    parser_types = {
-        'Alert': AlertParser,
-        'BedTag': BedTagParser,
-        'EnumerationValue': EnumerationValueParser,
-        'NumericValue': NumericValueParser,
-        'Patient': PatientBasicInfoParser,
-        'PatientDateAttribute': PatientDateAttributeParser,
-        'PatientMapping': PatientMappingParser,
-        'PatientStringAttribute': PatientStringAttributeParser,
-        'WaveSample': WaveSampleParser,
+    parser_message_types = {
+        'Alert': (AlertParser,
+                  AlertMessage),
+        'BedTag': (BedTagParser,
+                   BedTagMessage),
+        'EnumerationValue': (EnumerationValueParser,
+                             EnumerationValueMessage),
+        'NumericValue': (NumericValueParser,
+                         NumericValueMessage),
+        'Patient': (PatientBasicInfoParser,
+                    PatientBasicInfoMessage),
+        'PatientDateAttribute': (PatientDateAttributeParser,
+                                 PatientDateAttributeMessage),
+        'PatientMapping': (PatientMappingParser,
+                           PatientMappingMessage),
+        'PatientStringAttribute': (PatientStringAttributeParser,
+                                   PatientStringAttributeMessage),
+        'WaveSample': (WaveSampleParser,
+                       WaveSampleMessage),
     }
-    parser_type = parser_types[table_abbr]
+    (parser_type, message_type) = parser_message_types[table_abbr]
     table = '_Export.%s_' % table_abbr
 
     input_files = list(input_files)
@@ -67,7 +80,7 @@ def merge_files(table_abbr, input_files, output_data_file,
 
     if output_format_file is not None:
         with open(output_format_file, 'w') as fmtf:
-            fmtf.write(bcp_format_description(message))
+            fmtf.write(bcp_format_description(message_type))
 
 def _parse_timestamp(arg):
     try:
