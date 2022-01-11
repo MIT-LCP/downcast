@@ -26,7 +26,7 @@ from decimal import Decimal
 from ..messages import WaveSampleMessage
 from ..attributes import WaveAttr
 from .wfdb import (AnnotationType, Annotator, join_segments,
-                   SegmentHeader, SignalInfo)
+                   SegmentHeader, SignalInfo, SignalInfoMismatch)
 
 class WaveSampleHandler:
     def __init__(self, archive):
@@ -732,7 +732,11 @@ class WaveSampleFinalizer:
         if not segments:
             return
         headers = [os.path.join(record.path, s[1]) for s in segments]
-        join_segments(os.path.join(record.path, 'waves.hea'), headers)
+        try:
+            join_segments(os.path.join(record.path, 'waves.hea'), headers)
+        except SignalInfoMismatch:
+            # FIXME: split into multiple records
+            return
 
         # Read _wq files and write wave quality annotations
         annfname = os.path.join(self.record.path, 'waves.wq')

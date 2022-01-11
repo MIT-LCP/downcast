@@ -448,11 +448,14 @@ def join_segments(record_header, segment_headers, layout_suffix = '_layout',
                 signals[sig.desc] = sig
             else:
                 if oldsig.spf != sig.spf:
-                    raise ValueError('spf mismatch in %s' % (sig.desc))
+                    raise SignalInfoMismatch(
+                        'spf mismatch in %s' % (sig.desc))
                 if oldsig.skew != sig.skew:
-                    raise ValueError('skew mismatch in %s' % (sig.desc))
+                    raise SignalInfoMismatch(
+                        'skew mismatch in %s' % (sig.desc))
                 if oldsig.units != sig.units:
-                    raise ValueError('units mismatch in %s' % (sig.desc))
+                    raise SignalInfoMismatch(
+                        'units mismatch in %s' % (sig.desc))
                 oldsig.gain = max(oldsig.gain, sig.gain)
                 oldsig._minphys = min(oldsig._minphys, sig._minphys)
                 oldsig._maxphys = max(oldsig._maxphys, sig._maxphys)
@@ -515,3 +518,6 @@ def join_segments(record_header, segment_headers, layout_suffix = '_layout',
         if fsync:
             hf.flush()
             fdatasync(hf.fileno())
+
+class SignalInfoMismatch(ValueError):
+    pass
