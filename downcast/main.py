@@ -183,7 +183,7 @@ def _main_loop(opts):
     if opts.init:
         # In --init mode, simply create the extractor and write the
         # initial queue state files.
-        if not opts.partial:
+        if opts.start and not opts.partial:
             os.makedirs(opts.output_dir, exist_ok = True)
             horizon_file = os.path.join(opts.output_dir, '%horizon')
             with open(horizon_file, 'w') as hf:
