@@ -38,7 +38,8 @@ class SimpleQueryParser:
     }
 
     tokens = list(_keywords) + [
-        'PARAM', 'LE', 'GE', 'identifier', 'bracketed_identifier', 'integer'
+        'PARAM', 'LE', 'GE', 'identifier', 'bracketed_identifier',
+        'integer', 'string_constant'
     ]
 
     literals = ['=', '<', '>', ',', '*', ';']
@@ -74,6 +75,11 @@ class SimpleQueryParser:
     def t_integer(self, t):
         r'[0-9]+'
         t.value = int(t.value)
+        return t
+
+    def t_string_constant(self, t):
+        r"'(?:[^']+|'')*'"
+        t.value = t.value[1:-1].replace("''", "'")
         return t
 
     def t_error(self, t):
@@ -133,11 +139,11 @@ class SimpleQueryParser:
 
     def p_constraint(self, p):
         """
-        constraint : constraint_column '=' PARAM
-                   | constraint_column '<' PARAM
-                   | constraint_column '>' PARAM
-                   | constraint_column LE PARAM
-                   | constraint_column GE PARAM
+        constraint : constraint_column '=' constraint_value
+                   | constraint_column '<' constraint_value
+                   | constraint_column '>' constraint_value
+                   | constraint_column LE constraint_value
+                   | constraint_column GE constraint_value
         """
         p[0] = Constraint(column = p[1], relation = p[2], value = p[3])
         self._constraint_pos = None
@@ -146,6 +152,14 @@ class SimpleQueryParser:
         """constraint_column : column"""
         p[0] = p[1]
         self._constraint_pos = self._column_pos
+
+    def p_constraint_value(self, p):
+        """
+        constraint_value : PARAM
+                         | integer
+                         | string_constant
+        """
+        p[0] = p[1]
 
     def p_order(self, p):
         """order : ORDER BY column"""
