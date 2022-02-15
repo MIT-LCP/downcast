@@ -101,13 +101,16 @@ class NumericValueHandler:
     def flush(self):
         self.archive.flush()
 
+def _strip_csv_meta(string):
+    return string.replace(b',', b'_').replace(b'"', b'_')
+
 class NumericValueFinalizer:
     def __init__(self, record):
         self.record = record
 
         # Scan the log files; make a list of all non-null
         # numerics, and add timestamps to the time map
-        self.all_numerics = set()
+        raw_numerics = set()
 
         self.periodic_log = record.open_log_reader('_phi_numerics',
                                                    allow_missing = True)
@@ -119,7 +122,7 @@ class NumericValueFinalizer:
                 parts = line.rstrip(b'\n').split(b'\t')
                 # ignore nulls
                 if len(parts) >= 3 and parts[1]:
-                    self.all_numerics.add((parts[0], parts[2]))
+                    raw_numerics.add((parts[0], parts[2]))
 
         self.aperiodic_log = record.open_log_reader('_phi_aperiodics',
                                                     allow_missing = True)
@@ -128,19 +131,27 @@ class NumericValueFinalizer:
                 parts = line.rstrip(b'\n').split(b'\t')
                 # ignore nulls
                 if len(parts) >= 3 and parts[1]:
-                    self.all_numerics.add((parts[0], parts[2]))
+                    raw_numerics.add((parts[0], parts[2]))
+
+        self.norm_numerics = {}
+        for (raw_name, raw_units) in raw_numerics:
+            norm_name = _strip_csv_meta(raw_name.strip())
+            norm_units = _strip_csv_meta(raw_units.strip()) or b'NU'
+            self.norm_numerics[(raw_name, raw_units)] = (norm_name, norm_units)
 
     def finalize_record(self):
         sn0 = self.record.seqnum0()
 
-        if self.all_numerics:
-            num_columns = sorted(self.all_numerics)
-            num_index = {n: i + 1 for i, n in enumerate(num_columns)}
+        if self.norm_numerics:
+            num_columns = sorted(set(self.norm_numerics.values()))
+            num_index = {}
+            for (raw_key, norm_key) in self.norm_numerics.items():
+                num_index[raw_key] = num_columns.index(norm_key) + 1
 
             nf = self.record.open_log_file('numerics.csv', truncate = True)
             row = [b'"time"']
             for (name, units) in num_columns:
-                desc = name + b' [' + (units or b'NU') + b']'
+                desc = name + b' [' + units + b']'
                 row.append(b'"' + desc.replace(b'"', b'""') + b'"')
             cur_ts = None
             cur_sn = None
@@ -187,7 +198,7 @@ class NumericValueFinalizer:
                 if time != row[0]:
                     nf.fp.write(b','.join(row))
                     nf.fp.write(b'\n')
-                    row = [time] + [b''] * len(self.all_numerics)
+                    row = [time] + [b''] * len(num_columns)
                 row[num_index[col_id]] = parts[1].rstrip(b'0').rstrip(b'.')
             # write the final row
             nf.fp.write(b','.join(row))
