@@ -249,6 +249,7 @@ class TimeMap:
         events #1 and #3.
         """
         p = None
+        new_refs = []
         for n in self.entries:
             if p and n[3]:
                 gapstart = p[2] + timedelta(milliseconds = p[1])
@@ -262,9 +263,11 @@ class TimeMap:
                 tafter = best[1] + best[0]
                 snp = delta_ms(tbefore, p[2])
                 snn = delta_ms(tafter, n[2])
-                self.set_time(snp, tbefore)
-                self.set_time(snn, tafter)
+                new_refs.append((snp, tbefore))
+                new_refs.append((snn, tafter))
             p = n
+        for (seqnum, time) in new_refs:
+            self.set_time(seqnum, time)
 
 def _differences(k):
     i = iter(k)
